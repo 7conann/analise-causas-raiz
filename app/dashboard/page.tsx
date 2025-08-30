@@ -57,53 +57,78 @@ export default function DashboardPage() {
   useEffect(() => {
     const loadStats = () => {
       try {
-        const analysisHistory = JSON.parse(localStorage.getItem("rca_analysis_history") || "[]")
-        const lastResponse = localStorage.getItem("rca_last_response")
-        const executionHistory = JSON.parse(localStorage.getItem("rca_execution_history") || "[]")
+        const agentResponses = JSON.parse(localStorage.getItem("rca_agent_responses") || "[]")
+        const executionProgress = localStorage.getItem("rca_execution_progress")
+        const lastResponse = localStorage.getItem("rca_response") || localStorage.getItem("latest_analysis")
 
-        const totalAnalyses = analysisHistory.length + executionHistory.length
-        const successfulAnalyses =
-          analysisHistory.filter((a: any) => a.success).length + executionHistory.filter((e: any) => e.success).length
-        const failedAnalyses = totalAnalyses - successfulAnalyses
+        console.log("[v0] Loading dashboard data from localStorage")
+        console.log("[v0] Agent responses:", agentResponses)
+        console.log("[v0] Execution progress:", executionProgress)
+        console.log("[v0] Last response:", lastResponse)
 
+        // Calcular estatísticas baseadas nos dados reais
+        const totalAnalyses = agentResponses.length
+        const successfulAnalyses = agentResponses.filter((response: any) => response.status === "completed").length
+        const failedAnalyses = agentResponses.filter((response: any) => response.status === "error").length
+
+        // Data da última análise
         let lastAnalysisDate = null
-        if (lastResponse) {
-          const response = JSON.parse(lastResponse)
-          lastAnalysisDate = response.timestamp || new Date().toISOString()
+        if (agentResponses.length > 0) {
+          const sortedResponses = agentResponses.sort(
+            (a: any, b: any) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
+          )
+          lastAnalysisDate = sortedResponses[0].timestamp
         }
 
-        let chartData = []
-        if (executionHistory.length > 0) {
-          chartData = executionHistory.slice(-7).map((item: any, index: number) => ({
-            day: `Dia ${index + 1}`,
-            analyses: item.analyses || 0,
-            success: item.success || 0,
-            failed: item.failed || 0,
-          }))
-        } else {
-          chartData = Array.from({ length: 7 }, (_, index) => ({
-            day: `Dia ${index + 1}`,
-            analyses: 0,
-            success: 0,
-            failed: 0,
-          }))
-        }
+        // Tempo médio de processamento (simulado baseado no número de análises)
+        const avgProcessingTime =
+          agentResponses.length > 0
+            ? agentResponses.reduce((acc: number, curr: any) => acc + (curr.processingTime || 45), 0) /
+              agentResponses.length
+            : 0
+
+        // Histórico dos últimos 7 dias baseado nos dados reais
+        const last7Days = Array.from({ length: 7 }, (_, index) => {
+          const date = new Date()
+          date.setDate(date.getDate() - (6 - index))
+          const dayName = date.toLocaleDateString("pt-BR", { weekday: "short" })
+
+          // Contar análises deste dia
+          const dayResponses = agentResponses.filter((response: any) => {
+            const responseDate = new Date(response.timestamp)
+            return responseDate.toDateString() === date.toDateString()
+          })
+
+          const daySuccessful = dayResponses.filter((r: any) => r.status === "completed").length
+          const dayFailed = dayResponses.filter((r: any) => r.status === "error").length
+
+          return {
+            day: dayName,
+            analyses: dayResponses.length,
+            success: daySuccessful,
+            failed: dayFailed,
+          }
+        })
 
         setStats({
           totalAnalyses,
           successfulAnalyses,
           failedAnalyses,
           lastAnalysisDate,
-          avgProcessingTime:
-            executionHistory.length > 0
-              ? executionHistory.reduce((acc: number, curr: any) => acc + (curr.processingTime || 0), 0) /
-                executionHistory.length
-              : 0,
+          avgProcessingTime,
           promptsConfigured: 3,
-          analysisHistory: chartData,
+          analysisHistory: last7Days,
+        })
+
+        console.log("[v0] Dashboard stats calculated:", {
+          totalAnalyses,
+          successfulAnalyses,
+          failedAnalyses,
+          lastAnalysisDate,
+          avgProcessingTime,
         })
       } catch (error) {
-        console.error("Erro ao carregar estatísticas:", error)
+        console.error("[v0] Erro ao carregar estatísticas:", error)
         setStats({
           totalAnalyses: 0,
           successfulAnalyses: 0,
@@ -111,12 +136,16 @@ export default function DashboardPage() {
           lastAnalysisDate: null,
           avgProcessingTime: 0,
           promptsConfigured: 3,
-          analysisHistory: Array.from({ length: 7 }, (_, index) => ({
-            day: `Dia ${index + 1}`,
-            analyses: 0,
-            success: 0,
-            failed: 0,
-          })),
+          analysisHistory: Array.from({ length: 7 }, (_, index) => {
+            const date = new Date()
+            date.setDate(date.getDate() - (6 - index))
+            return {
+              day: date.toLocaleDateString("pt-BR", { weekday: "short" }),
+              analyses: 0,
+              success: 0,
+              failed: 0,
+            }
+          }),
         })
       }
     }
@@ -409,7 +438,7 @@ export default function DashboardPage() {
           {stats.totalAnalyses === 0 && (
             <div className="text-center py-8">
               <AlertTriangle className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-lg font-semibold mb-2">Dados de exemplo sendo exibidos</h3>
+              <h3 className="text-lg font-semibold mb-2">Nenhuma análise realizada ainda</h3>
               <p className="text-muted-foreground mb-4">Execute sua primeira análise para ver dados reais</p>
               <Link href="/dashboard/execution">
                 <Button>

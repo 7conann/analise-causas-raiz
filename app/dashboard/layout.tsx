@@ -6,7 +6,7 @@ import { useEffect, useState } from "react"
 import { useRouter } from "next/navigation"
 import { auth } from "@/lib/storage"
 import { Button } from "@/components/ui/button"
-import { Settings, FileText, Play, Eye, LogOut, Menu, X, BarChart3, HelpCircle } from "lucide-react"
+import { Settings, FileText, Play, Eye, LogOut, Menu, X, BarChart3, HelpCircle, Activity } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import { cn } from "@/lib/utils"
@@ -15,6 +15,7 @@ const navigation = [
   { name: "Dashboard", href: "/dashboard", icon: BarChart3 },
   { name: "Prompts", href: "/dashboard/prompts", icon: FileText },
   { name: "Execução", href: "/dashboard/execution", icon: Play },
+  { name: "Monitoramento", href: "/dashboard/monitoring", icon: Activity },
   { name: "Visualização", href: "/dashboard/output", icon: Eye },
 ]
 

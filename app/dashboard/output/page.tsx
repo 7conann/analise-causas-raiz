@@ -8,6 +8,7 @@ import { Download, Printer, Copy, Eye, EyeOff, Maximize, Minimize } from "lucide
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { useRouter } from "next/navigation"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 interface WebhookResponse {
   success: boolean
@@ -15,9 +16,146 @@ interface WebhookResponse {
   data: any
   contentType: string
   method: string
+  agent?: number
+}
+
+interface SavedResponse {
+  id: string
+  agentName: string
+  timestamp: string
+  response: any
+  agent?: number
+  mode?: string
 }
 
 const possibleKeys = ["rca_last_response", "beely_last_response", "last_webhook_response"]
+
+const loadSpecificResponse = (savedResponse: any) => {
+  console.log("[v0] Loading specific response:", savedResponse)
+
+  if (savedResponse.agent === 3) {
+    let htmlToSet = ""
+
+    if (typeof savedResponse.response === "string" && savedResponse.response.includes("<html")) {
+      htmlToSet = savedResponse.response
+    } else if (savedResponse.response?.html) {
+      htmlToSet = `
+        <html>
+          <head>
+            <meta charset="utf-8" />
+            <title>Relatório de Análise RCA</title>
+            <style>
+              * { box-sizing: border-box; }
+              body { 
+                font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
+                margin: 0; 
+                padding: 24px; 
+                background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+                color: #f1f5f9;
+                line-height: 1.6;
+              }
+              .container {
+                max-width: 1200px;
+                margin: 0 auto;
+                background: #1e293b;
+                border-radius: 16px;
+                box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+                overflow: hidden;
+                border: 1px solid #334155;
+              }
+              .header {
+                background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
+                color: white;
+                padding: 32px;
+                text-align: center;
+              }
+              .header h1 { 
+                margin: 0; 
+                font-size: 2.5rem; 
+                font-weight: 700;
+                text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+              }
+              .content { padding: 32px; }
+              h2 { 
+                color: #60a5fa; 
+                margin: 32px 0 20px 0; 
+                font-size: 1.75rem;
+                font-weight: 600;
+                border-bottom: 3px solid #475569; 
+                padding-bottom: 12px; 
+              }
+              h3 {
+                color: #e2e8f0;
+                font-size: 1.25rem;
+                font-weight: 600;
+                margin: 20px 0 12px 0;
+              }
+              .card { 
+                background: linear-gradient(135deg, #334155 0%, #475569 100%);
+                border: 1px solid #64748b; 
+                border-radius: 12px;
+                padding: 24px; 
+                margin: 20px 0; 
+                box-shadow: 0 4px 6px rgba(0,0,0,0.2);
+                transition: transform 0.2s ease, box-shadow 0.2s ease;
+              }
+              .card:hover {
+                transform: translateY(-2px);
+                box-shadow: 0 8px 15px rgba(0,0,0,0.3);
+              }
+              .subcard { 
+                background: #1e293b;
+                border: 2px dashed #64748b; 
+                padding: 20px; 
+                margin: 16px 0; 
+                border-radius: 8px;
+                position: relative;
+              }
+              .avisos { 
+                background: linear-gradient(135deg, #451a03 0%, #78350f 100%);
+                border: 2px solid #f59e0b;
+                color: #fbbf24;
+              }
+              ul { 
+                margin: 12px 0; 
+                padding-left: 24px; 
+              }
+              li {
+                margin: 8px 0;
+                padding: 4px 0;
+              }
+              @media (max-width: 768px) {
+                body { padding: 12px; }
+                .header { padding: 20px; }
+                .header h1 { font-size: 2rem; }
+                .content { padding: 20px; }
+                .card { padding: 16px; }
+                .subcard { padding: 16px; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="container">
+              <div class="header">
+                <h1>Relatório A3 – Análise de Falha</h1>
+              </div>
+              <div class="content">
+                ${savedResponse.response.html.replace(/<body[^>]*>(.*)<\/body>/s, "$1").replace(/<html[^>]*>|<\/html>|<head[^>]*>.*?<\/head>/gs, "")}
+              </div>
+            </div>
+          </body>
+        </html>
+      `
+    }
+
+    if (htmlToSet) {
+      console.log("[v0] Setting HTML content for Agent 3")
+      return htmlToSet
+    }
+  }
+
+  return ""
+}
 
 export default function OutputPage() {
   const { toast } = useToast()
@@ -27,269 +165,108 @@ export default function OutputPage() {
   const [showJson, setShowJson] = useState(false)
   const [htmlContent, setHtmlContent] = useState("")
   const [isFullscreen, setIsFullscreen] = useState(false)
+  const [availableResponses, setAvailableResponses] = useState<any[]>([])
+  const [selectedResponseId, setSelectedResponseId] = useState<string>("")
 
   useEffect(() => {
-    const loadResponse = () => {
-      console.log("[v0] Loading response from localStorage...")
+    const loadAvailableResponses = () => {
+      console.log("[v0] Loading available responses...")
+      const responses: any[] = []
 
-      let stored = null
-      let usedKey = null
-
-      for (const key of possibleKeys) {
-        stored = localStorage.getItem(key)
-        if (stored) {
-          usedKey = key
-          console.log(`[v0] Found response in key: ${key}`)
-          break
+      const agent3History = localStorage.getItem("rca_agent3_history")
+      if (agent3History) {
+        try {
+          const history = JSON.parse(agent3History)
+          if (Array.isArray(history)) {
+            console.log("[v0] Loaded agent 3 history:", history.length, "executions")
+            responses.push(...history)
+          }
+        } catch (err) {
+          console.error("[v0] Error parsing agent 3 history:", err)
         }
       }
 
-      console.log("[v0] Stored response:", stored)
-
-      if (stored) {
+      // Carregar respostas dos agentes individuais (compatibilidade)
+      const agentResponses = localStorage.getItem("rca_agent_responses")
+      if (agentResponses) {
         try {
-          const parsed = JSON.parse(stored)
-          console.log("[v0] Parsed response:", parsed)
-          setResponse(parsed)
+          const parsed = JSON.parse(agentResponses)
+          if (Array.isArray(parsed)) {
+            responses.push(...parsed.filter((r) => r.agent === 3))
+          }
+        } catch (err) {
+          console.error("[v0] Error parsing agent responses:", err)
+        }
+      }
 
-          if (parsed.success && parsed.data?.html) {
-            console.log("[v0] Found HTML in response data, processing...")
-            console.log("[v0] HTML content length:", parsed.data.html.length)
+      // Carregar do execution progress (compatibilidade)
+      const executionProgress = localStorage.getItem("rca_execution_progress")
+      if (executionProgress) {
+        try {
+          const progress = JSON.parse(executionProgress)
+          if (progress.agentResponses?.agent3) {
+            const value = progress.agentResponses.agent3
 
-            const enhancedHtml = `
-              <html>
-                <head>
-                  <meta charset="utf-8" />
-                  <title>Relatório de Análise RCA</title>
-                  <style>
-                    * { box-sizing: border-box; }
-                    body { 
-                      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; 
-                      margin: 0; 
-                      padding: 24px; 
-                      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-                      color: #f1f5f9;
-                      line-height: 1.6;
-                    }
-                    .container {
-                      max-width: 1200px;
-                      margin: 0 auto;
-                      background: #1e293b;
-                      border-radius: 16px;
-                      box-shadow: 0 10px 25px rgba(0,0,0,0.3);
-                      overflow: hidden;
-                      border: 1px solid #334155;
-                    }
-                    .header {
-                      background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
-                      color: white;
-                      padding: 32px;
-                      text-align: center;
-                    }
-                    .header h1 { 
-                      margin: 0; 
-                      font-size: 2.5rem; 
-                      font-weight: 700;
-                      text-shadow: 0 2px 4px rgba(0,0,0,0.3);
-                    }
-                    .content { padding: 32px; }
-                    h2 { 
-                      color: #60a5fa; 
-                      margin: 32px 0 20px 0; 
-                      font-size: 1.75rem;
-                      font-weight: 600;
-                      border-bottom: 3px solid #475569; 
-                      padding-bottom: 12px; 
-                    }
-                    h3 {
-                      color: #e2e8f0;
-                      font-size: 1.25rem;
-                      font-weight: 600;
-                      margin: 20px 0 12px 0;
-                    }
-                    .card { 
-                      background: linear-gradient(135deg, #334155 0%, #475569 100%);
-                      border: 1px solid #64748b; 
-                      border-radius: 12px;
-                      padding: 24px; 
-                      margin: 20px 0; 
-                      box-shadow: 0 4px 6px rgba(0,0,0,0.2);
-                      transition: transform 0.2s ease, box-shadow 0.2s ease;
-                    }
-                    .card:hover {
-                      transform: translateY(-2px);
-                      box-shadow: 0 8px 15px rgba(0,0,0,0.3);
-                    }
-                    .subcard { 
-                      background: #1e293b;
-                      border: 2px dashed #64748b; 
-                      padding: 20px; 
-                      margin: 16px 0; 
-                      border-radius: 8px;
-                      position: relative;
-                    }
-                    .subcard::before {
-                      content: '';
-                      position: absolute;
-                      top: -1px;
-                      left: -1px;
-                      right: -1px;
-                      bottom: -1px;
-                      background: linear-gradient(45deg, #3b82f6, #8b5cf6);
-                      border-radius: 8px;
-                      z-index: -1;
-                      opacity: 0;
-                      transition: opacity 0.3s ease;
-                    }
-                    .subcard:hover::before {
-                      opacity: 0.2;
-                    }
-                    .avisos { 
-                      background: linear-gradient(135deg, #451a03 0%, #78350f 100%);
-                      border: 2px solid #f59e0b;
-                      color: #fbbf24;
-                    }
-                    .avisos h3 {
-                      color: #fbbf24;
-                      display: flex;
-                      align-items: center;
-                      gap: 8px;
-                    }
-                    .avisos h3::before {
-                      content: '⚠️';
-                      font-size: 1.2em;
-                    }
-                    ul { 
-                      margin: 12px 0; 
-                      padding-left: 24px; 
-                    }
-                    li {
-                      margin: 8px 0;
-                      padding: 4px 0;
-                    }
-                    .subcard div {
-                      margin: 8px 0;
-                      padding: 4px 0;
-                    }
-                    .subcard b {
-                      color: #60a5fa;
-                      font-weight: 600;
-                      display: inline-block;
-                      min-width: 140px;
-                    }
-                    .causa-badge {
-                      display: inline-block;
-                      background: #3b82f6;
-                      color: white;
-                      padding: 4px 12px;
-                      border-radius: 20px;
-                      font-size: 0.875rem;
-                      font-weight: 500;
-                      margin-bottom: 12px;
-                    }
-                    .task-type {
-                      display: inline-block;
-                      padding: 2px 8px;
-                      border-radius: 12px;
-                      font-size: 0.75rem;
-                      font-weight: 500;
-                      text-transform: uppercase;
-                      margin-left: 8px;
-                    }
-                    .task-type.inspecao { background: #1e40af; color: #dbeafe; }
-                    .task-type.documento { background: #166534; color: #dcfce7; }
-                    .task-type.medicao { background: #92400e; color: #fef3c7; }
-                    @media (max-width: 768px) {
-                      body { padding: 12px; }
-                      .header { padding: 20px; }
-                      .header h1 { font-size: 2rem; }
-                      .content { padding: 20px; }
-                      .card { padding: 16px; }
-                      .subcard { padding: 16px; }
-                    }
-                  </style>
-                </head>
-                <body>
-                  <div class="container">
-                    <div class="header">
-                      <h1>Relatório A3 – Análise de Falha</h1>
-                    </div>
-                    <div class="content">
-                      ${parsed.data.html.replace(/<body[^>]*>(.*)<\/body>/s, "$1").replace(/<html[^>]*>|<\/html>|<head[^>]*>.*?<\/head>/gs, "")}
-                    </div>
-                  </div>
-                  <script>
-                    document.querySelectorAll('.subcard').forEach(card => {
-                      const tipoDiv = Array.from(card.querySelectorAll('div')).find(div => 
-                        div.innerHTML.includes('<b>Tipo:</b>')
-                      );
-                      if (tipoDiv) {
-                        const tipo = tipoDiv.textContent.split(':')[1]?.trim();
-                        if (tipo) {
-                          const badge = document.createElement('span');
-                          badge.className = 'task-type ' + tipo;
-                          badge.textContent = tipo;
-                          tipoDiv.appendChild(badge);
-                        }
-                      }
-                    });
-                    
-                    document.querySelectorAll('.card h3').forEach(h3 => {
-                      if (h3.textContent.includes('Causa')) {
-                        const badge = document.createElement('div');
-                        badge.className = 'causa-badge';
-                        badge.textContent = h3.textContent;
-                        h3.parentNode.insertBefore(badge, h3);
-                        h3.style.display = 'none';
-                      }
-                    });
-                  </script>
-                </body>
-              </html>
-            `
-            console.log("[v0] Enhanced HTML created, setting content...")
-            setHtmlContent(enhancedHtml)
-          } else if (parsed.success && parsed.contentType?.includes("text/html") && typeof parsed.data === "string") {
-            console.log("[v0] Found HTML string in response data...")
-            setHtmlContent(parsed.data)
-          } else {
-            console.log("[v0] No HTML found in response. Response structure:", {
-              success: parsed.success,
-              hasData: !!parsed.data,
-              dataType: typeof parsed.data,
-              hasHtml: !!parsed.data?.html,
-              contentType: parsed.contentType,
+            if (value && value.data) {
+              responses.push({
+                id: `execution_agent3`,
+                agentName: "Agente de Investigação",
+                timestamp: progress.timestamp || new Date().toISOString(),
+                response: value.data,
+                agent: 3,
+              })
+            }
+          }
+        } catch (err) {
+          console.error("[v0] Error parsing execution progress:", err)
+        }
+      }
+
+      // Carregar resposta individual do agente 3 (compatibilidade)
+      const agent3Response = localStorage.getItem("rca_agent_3_response")
+      if (agent3Response) {
+        try {
+          const parsed = JSON.parse(agent3Response)
+          if (parsed && parsed.data) {
+            responses.push({
+              id: "agent3_individual",
+              agentName: "Agente de Investigação",
+              timestamp: new Date().toISOString(),
+              response: parsed.data,
+              agent: 3,
             })
           }
         } catch (err) {
-          console.error("[v0] Error parsing stored response:", err)
+          console.error("[v0] Error parsing agent 3 response:", err)
         }
-      } else {
-        console.log("[v0] No stored response found in localStorage")
+      }
+
+      // Remover duplicatas baseado no ID e ordenar por timestamp (mais recente primeiro)
+      const uniqueResponses = responses
+        .filter((response, index, self) => index === self.findIndex((r) => r.id === response.id))
+        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+
+      console.log("[v0] Available Agent 3 responses:", uniqueResponses.length, "total")
+      setAvailableResponses(uniqueResponses)
+
+      // Auto-selecionar a primeira resposta disponível do Agent 3
+      if (uniqueResponses.length > 0) {
+        const defaultResponse = uniqueResponses[0]
+        setSelectedResponseId(defaultResponse.id)
+        const htmlContent = loadSpecificResponse(defaultResponse)
+        setResponse({
+          success: true,
+          status: 200,
+          data: defaultResponse.response,
+          contentType: "text/html",
+          method: "fetch",
+          agent: 3,
+        })
+        setHtmlContent(htmlContent)
       }
     }
 
-    const pollForData = () => {
-      const interval = setInterval(() => {
-        console.log("[v0] Polling for new data...")
-        loadResponse()
-
-        // Parar polling se encontrou dados
-        if (response) {
-          clearInterval(interval)
-        }
-      }, 1000)
-
-      // Limpar após 30 segundos
-      setTimeout(() => {
-        clearInterval(interval)
-      }, 30000)
-
-      return interval
-    }
-
-    loadResponse()
-    const pollingInterval = pollForData()
+    loadAvailableResponses()
 
     const handleWebhookComplete = (event: CustomEvent) => {
       console.log("[v0] Webhook complete event received:", event.detail)
@@ -304,7 +281,7 @@ export default function OutputPage() {
 
         setTimeout(() => {
           console.log("[v0] Reloading response after webhook completion...")
-          loadResponse()
+          loadAvailableResponses()
         }, 500)
       } else {
         console.log("[v0] Webhook failed with status:", status)
@@ -321,19 +298,32 @@ export default function OutputPage() {
 
     const handleStorageChange = (e: StorageEvent) => {
       console.log("[v0] Storage change detected:", e.key, e.newValue)
-      if (possibleKeys.includes(e.key || "")) {
-        loadResponse()
+      const agentKeys = ["rca_agent_3_response", "rca_agent_2_response", "rca_agent_1_response"]
+      const relevantKeys = [...agentKeys, ...possibleKeys]
+      if (relevantKeys.includes(e.key || "")) {
+        console.log("[v0] Relevant storage change detected, reloading...")
+        loadAvailableResponses()
       }
     }
 
     window.addEventListener("storage", handleStorageChange)
 
     return () => {
-      clearInterval(pollingInterval)
       window.removeEventListener("storage", handleStorageChange)
       window.removeEventListener("webhook-complete", handleWebhookComplete as EventListener)
     }
   }, [toast, router])
+
+  const handleResponseSelection = (responseId: string) => {
+    console.log("[v0] Response selected:", responseId)
+    setSelectedResponseId(responseId)
+
+    const selectedResponse = availableResponses.find((r) => r.id === responseId)
+    if (selectedResponse) {
+      setResponse(loadSpecificResponse(selectedResponse))
+      setHtmlContent(loadSpecificResponse(selectedResponse))
+    }
+  }
 
   const toggleFullscreen = () => {
     setIsFullscreen(!isFullscreen)
@@ -466,10 +456,47 @@ export default function OutputPage() {
         {response && (
           <div className="flex items-center gap-2">
             <Badge variant={getStatusBadgeVariant(response.status)}>{response.status}</Badge>
-            <Badge variant="outline">{response.method.toUpperCase()}</Badge>
+            <Badge variant="outline">{response.method ? response.method.toUpperCase() : "N/A"}</Badge>
           </div>
         )}
       </div>
+
+      {availableResponses.length > 0 && (
+        <Card>
+          <CardHeader>
+            <CardTitle>🔍 Selecionar Resposta</CardTitle>
+            <CardDescription>Escolha qual resposta deseja visualizar</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Select value={selectedResponseId} onValueChange={handleResponseSelection}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Selecione uma resposta do Agent 3..." />
+              </SelectTrigger>
+              <SelectContent>
+                {availableResponses.map((resp, index) => (
+                  <SelectItem key={resp.id} value={resp.id}>
+                    <div className="flex items-center gap-2">
+                      <Badge variant="default" className="text-xs">
+                        Agente 3
+                      </Badge>
+                      <span>{resp.agentName}</span>
+                      <span className="text-xs text-muted-foreground">#{index + 1}</span>
+                      {resp.mode && (
+                        <Badge variant="outline" className="text-xs">
+                          {resp.mode}
+                        </Badge>
+                      )}
+                      <span className="text-xs text-muted-foreground ml-auto">
+                        {new Date(resp.timestamp).toLocaleString("pt-BR")}
+                      </span>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </CardContent>
+        </Card>
+      )}
 
       {!response ? (
         <Card>
@@ -484,7 +511,6 @@ export default function OutputPage() {
         </Card>
       ) : (
         <div className="grid gap-6">
-          {/* Action Buttons */}
           <Card>
             <CardHeader>
               <CardTitle>🛠️ Ações</CardTitle>
@@ -533,7 +559,6 @@ export default function OutputPage() {
             </Card>
           )}
 
-          {/* Preview Frame */}
           <Card>
             <CardHeader>
               <CardTitle>📋 Relatório de Análise</CardTitle>
@@ -591,7 +616,7 @@ export default function OutputPage() {
                 <div className="flex items-center gap-2">
                   <span className="text-muted-foreground">Método:</span>
                   <Badge variant="outline" className="text-xs">
-                    {response.method.toUpperCase()}
+                    {response.method ? response.method.toUpperCase() : "N/A"}
                   </Badge>
                 </div>
                 <div className="flex items-center gap-2">

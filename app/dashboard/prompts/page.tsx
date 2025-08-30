@@ -210,23 +210,25 @@ export default function PromptsPage() {
         {promptConfigs.map((config, index) => (
           <Card key={config.key} className="prompt-editor shadow-lg border-0 bg-card/50 backdrop-blur-sm">
             <CardHeader className="pb-4">
-              <div className="flex items-start justify-between">
-                <div className="flex items-start gap-4">
-                  <div className={`${config.color} p-3 rounded-xl text-white shadow-lg`}>{config.icon}</div>
-                  <div className="space-y-1">
+              <div className="flex flex-col sm:flex-row items-start justify-between gap-4">
+                <div className="flex items-start gap-4 w-full sm:w-auto">
+                  <div className={`${config.color} p-3 rounded-xl text-white shadow-lg flex-shrink-0`}>
+                    {config.icon}
+                  </div>
+                  <div className="space-y-1 min-w-0 flex-1">
                     <CardTitle className="text-xl font-semibold">{config.title}</CardTitle>
                     <CardDescription className="text-base">{config.description}</CardDescription>
                   </div>
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge variant="secondary" className="px-3 py-1 font-medium">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3 w-full sm:w-auto">
+                  <Badge variant="secondary" className="px-3 py-1 font-medium whitespace-nowrap">
                     {charCounts[config.key].toLocaleString()} caracteres
                   </Badge>
                   <Button
                     variant="outline"
                     size="sm"
                     onClick={() => handleCopy(promptData[config.key], config.title)}
-                    className="shadow-sm hover:shadow-md transition-shadow"
+                    className="shadow-sm hover:shadow-md transition-shadow w-full sm:w-auto"
                   >
                     <Copy className="h-4 w-4 mr-1" />
                     Copiar
@@ -243,11 +245,11 @@ export default function PromptsPage() {
                   id={config.key}
                   value={promptData[config.key]}
                   onChange={(e) => handlePromptChange(config.key, e.target.value)}
-                  className="min-h-[240px] font-mono text-sm leading-relaxed resize-none border-border/50 focus:border-accent bg-background/50 backdrop-blur-sm"
+                  className="min-h-[240px] font-mono text-sm leading-relaxed resize-none border-border/50 focus:border-accent bg-background/50 backdrop-blur-sm w-full"
                   placeholder={`Digite o prompt para o ${config.title.toLowerCase()}...`}
                 />
               </div>
-              <div className="flex items-center justify-between text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
                 <span>Linhas: {promptData[config.key].split("\n").length}</span>
                 <span>Palavras: {promptData[config.key].split(/\s+/).filter((word) => word.length > 0).length}</span>
                 <span>Caracteres: {charCounts[config.key]}</span>
