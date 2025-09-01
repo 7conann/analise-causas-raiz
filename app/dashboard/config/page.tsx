@@ -8,8 +8,19 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { useToast } from "@/hooks/use-toast"
-import { webhookUrl, resetAll } from "@/lib/storage"
-import { Save, RotateCcw, AlertTriangle, Settings, Moon, Sun, Monitor, Download, Upload, Palette } from "lucide-react"
+import { webhookUrl } from "@/lib/storage" // ⬅️ removido resetAll
+import {
+  Save,
+  RotateCcw,
+  AlertTriangle,
+  Settings,
+  Moon,
+  Sun,
+  Monitor,
+  Download,
+  Upload,
+  Palette,
+} from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -29,13 +40,13 @@ export default function ConfigPage() {
   const { toast } = useToast()
   const [webhookURL, setWebhookURL] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-  const [theme, setTheme] = useState("dark")
+  const [theme, setTheme] = useState<"dark" | "light" | "system">("dark")
   const [autoSave, setAutoSave] = useState(true)
   const [notifications, setNotifications] = useState(true)
 
   useEffect(() => {
     setWebhookURL(webhookUrl.load())
-    const savedTheme = localStorage.getItem("rca_theme") || "dark"
+    const savedTheme = (localStorage.getItem("rca_theme") as "dark" | "light" | "system") || "dark"
     const savedAutoSave = localStorage.getItem("rca_auto_save") !== "false"
     const savedNotifications = localStorage.getItem("rca_notifications") !== "false"
 
@@ -123,9 +134,10 @@ export default function ConfigPage() {
 
         // Recarregar configurações
         setWebhookURL(webhookUrl.load())
-        setTheme(data.theme || "dark")
+        setTheme((data.theme as "dark" | "light" | "system") || "dark")
         setAutoSave(data.autoSave !== false)
         setNotifications(data.notifications !== false)
+        applyTheme((data.theme as "dark" | "light" | "system") || "dark")
 
         toast({
           title: "✅ Dados importados",
@@ -143,16 +155,32 @@ export default function ConfigPage() {
     event.target.value = "" // Reset input
   }
 
+  // 🔴 Reset total mantendo apenas beely_auth = "true"
   const handleResetAll = () => {
-    resetAll()
-    setWebhookURL(webhookUrl.load())
-    setTheme("dark")
-    setAutoSave(true)
-    setNotifications(true)
-    toast({
-      title: "🔄 Dados resetados",
-      description: "Todos os dados foram resetados para os valores padrão. A autenticação foi mantida.",
-    })
+    try {
+      // Se quiser preservar o valor original, pegue antes. Aqui vamos forçar "true".
+      // const existingBeelyAuth = localStorage.getItem("beely_auth")
+      localStorage.clear()
+      localStorage.setItem("beely_auth", "true") // requisito: manter beely_auth true
+
+      // Reset de estados para os padrões
+      setWebhookURL("")
+      setTheme("dark")
+      setAutoSave(true)
+      setNotifications(true)
+      applyTheme("dark")
+
+      toast({
+        title: "🔄 Dados resetados",
+        description: "Tudo foi apagado, mantendo apenas vc logado.",
+      })
+    } catch (error) {
+      toast({
+        title: "❌ Erro ao resetar",
+        description: "Não foi possível resetar os dados.",
+        variant: "destructive",
+      })
+    }
   }
 
   const isValidURL = (url: string) => {
@@ -164,7 +192,7 @@ export default function ConfigPage() {
     }
   }
 
-  const applyTheme = (selectedTheme: string) => {
+  const applyTheme = (selectedTheme: "dark" | "light" | "system") => {
     const root = document.documentElement
 
     if (selectedTheme === "light") {
@@ -201,7 +229,7 @@ export default function ConfigPage() {
             <div className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="theme-select">Tema da Interface</Label>
-                <Select value={theme} onValueChange={setTheme}>
+                <Select value={theme} onValueChange={(v: "dark" | "light" | "system") => setTheme(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Selecione o tema" />
                   </SelectTrigger>
@@ -366,8 +394,9 @@ export default function ConfigPage() {
             <Alert>
               <AlertTriangle className="h-4 w-4" />
               <AlertDescription>
-                <strong>Atenção:</strong> O reset irá apagar todos os prompts personalizados, configurações de webhook e
-                dados de execução. A autenticação será mantida.
+                <strong>Atenção:</strong> O reset irá apagar todos os prompts personalizados, configurações de webhook,
+                tema e preferências, e dados de execução. <br />
+                <strong>Será mantido apenas:</strong> Seu login ativo.
               </AlertDescription>
             </Alert>
 
@@ -382,12 +411,7 @@ export default function ConfigPage() {
                 <AlertDialogHeader>
                   <AlertDialogTitle>Confirmar reset completo</AlertDialogTitle>
                   <AlertDialogDescription>
-                    Esta ação irá resetar todos os dados para os valores padrão:
-                    <br />• Prompts dos agentes (A1, A2, A3) • URL do webhook • Dados de execução anteriores •
-                    Configurações de tema e preferências
-                    <br />
-                    <br />
-                    <strong>A autenticação será mantida.</strong> Esta ação não pode ser desfeita.
+                    Esta ação irá apagar todos os dados do <em>localStorage</em>, mantendo apenas vc logado
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
@@ -412,24 +436,26 @@ export default function ConfigPage() {
               <div className="flex justify-between">
                 <span>Prompts salvos:</span>
                 <span className="text-muted-foreground">
-                  {localStorage.getItem("rca_prompts") ? "Personalizados" : "Padrão"}
+                  {typeof window !== "undefined" && localStorage.getItem("rca_prompts") ? "Personalizados" : "Padrão"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>URL do webhook:</span>
                 <span className="text-muted-foreground">
-                  {localStorage.getItem("rca_webhook_url") ? "Personalizada" : "Padrão"}
+                  {typeof window !== "undefined" && localStorage.getItem("rca_webhook_url") ? "Personalizada" : "Padrão"}
                 </span>
               </div>
               <div className="flex justify-between">
                 <span>Última execução:</span>
                 <span className="text-muted-foreground">
-                  {localStorage.getItem("rca_last_response") ? "Disponível" : "Nenhuma"}
+                  {typeof window !== "undefined" && localStorage.getItem("rca_last_response") ? "Disponível" : "Nenhuma"}
                 </span>
               </div>
               <div className="flex justify-between">
-                <span>Autenticação:</span>
-                <span className="text-muted-foreground">{localStorage.getItem("rca_auth") ? "Ativa" : "Inativa"}</span>
+                <span>Autenticação (beely_auth):</span>
+                <span className="text-muted-foreground">
+                  {typeof window !== "undefined" && localStorage.getItem("beely_auth") === "true" ? "Ativa" : "Inativa"}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span>Tema:</span>
