@@ -6,8 +6,8 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { useToast } from "@/hooks/use-toast"
-import { prompts, webhookUrl } from "@/lib/storage"
+import { toast } from "react-hot-toast"
+import { webhookUrl } from "@/lib/storage"
 import {
   Send,
   FileText,
@@ -21,15 +21,22 @@ import {
   CheckCircle,
   Play,
   Pause,
+  BookOpen,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
+import { Checkbox } from "@/components/ui/checkbox"
+
+const currentPrompts = {
+  a1: "Prompt for Agent 1",
+  a2: "Prompt for Agent 2",
+  a3: "Prompt for Agent 3",
+}
 
 export default function ExecutionPage() {
-  const { toast } = useToast()
   const router = useRouter()
 
   const [webhookURLs, setWebhookURLs] = useState({
@@ -75,6 +82,9 @@ export default function ExecutionPage() {
   })
 
   const [hasLoadedProgress, setHasLoadedProgress] = useState(false)
+  const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string[]>([])
+  const [availableDocuments, setAvailableDocuments] = useState<any[]>([])
+
   const nextAgent = 1 // Declare the variable here
 
   useEffect(() => {
@@ -86,39 +96,43 @@ export default function ExecutionPage() {
 
   useEffect(() => {
     if (!hasLoadedProgress) {
-      loadSavedProgress()
+      loadExecutionProgress()
       setHasLoadedProgress(true)
     }
+
+    // Carregar documentos disponíveis
+    loadAvailableDocuments()
   }, [hasLoadedProgress])
 
-  const executeAgent = async (agentNumber: number, inputData: any = null) => {
-    console.log(`[v0] Executing Agent ${agentNumber}`)
-
-    if (executionMode === "manual") {
-      setManualLoadingDialog({ open: true, agent: agentNumber })
-    }
-
-    setAgentStatus((prev) => ({
-      ...prev,
-      [`agent${agentNumber}`]: "processing",
-    }))
-
+  const executeAgent = async (agentNumber: number, inputData?: any) => {
     try {
-      const currentPrompts = prompts.load()
+      setIsLoading(true)
+      console.log(`[v0] Executing Agent ${agentNumber}`)
+
+      const payload = buildPayload(true)
+      console.log(`[v0] Payload completo para Agent ${agentNumber}:`, payload)
+      console.log(`[v0] Descrição com base de conhecimento:`, payload.descricao)
+
       let requestData
 
       if (agentNumber === 1) {
-        // Primeiro agente recebe os dados originais
         requestData = {
           prompts: { a1: currentPrompts.a1 },
-          payload: buildPayload(),
+          payload: payload, // Usando payload já construído
           agent: 1,
         }
-      } else {
-        // Agentes 2 e 3 recebem a resposta do agente anterior
+      } else if (agentNumber === 2) {
         requestData = {
           prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
-          payload: buildPayload(),
+          payload: payload, // Usando payload já construído
+          previousResponse: inputData,
+          agent: agentNumber,
+        }
+      } else {
+        // Terceiro agente recebe a resposta do agente anterior COM base de conhecimento
+        requestData = {
+          prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
+          payload: payload, // Usando payload já construído
           previousResponse: inputData,
           agent: agentNumber,
         }
@@ -126,7 +140,7 @@ export default function ExecutionPage() {
 
       const webhookUrl = webhookURLs[`agent${agentNumber}`]
       console.log(`[v0] Sending request to Agent ${agentNumber}:`, webhookUrl)
-      console.log(`[v0] Request data:`, requestData)
+      console.log(`[v0] Request data completo:`, JSON.stringify(requestData, null, 2)) // Log mais detalhado
 
       const response = await fetch(webhookUrl, {
         method: "POST",
@@ -263,6 +277,8 @@ export default function ExecutionPage() {
       setTimeout(() => saveProgress(), 100)
 
       throw error
+    } finally {
+      setIsLoading(false)
     }
   }
 
@@ -334,7 +350,9 @@ export default function ExecutionPage() {
         console.error("[v0] Error loading agent 3 history:", err)
       }
 
-      agent3History.unshift(historicalExecution)
+      agent3History.unshift(historicalExecution) // Adiciona no início (mais recente primeiro)
+
+      // Limitar histórico a 50 execuções para evitar crescimento excessivo
       if (agent3History.length > 50) {
         agent3History = agent3History.slice(0, 50)
       }
@@ -351,13 +369,12 @@ export default function ExecutionPage() {
 
       toast({
         title: "✅ Análise completa concluída",
-        description: "Todos os 3 agentes processaram com sucesso! Redirecionando...",
-        duration: 3000,
+        description:
+          "Todos os 3 agentes processaram com sucesso! Use o botão 'Visualizar Resposta' do Agente 3 para ver o relatório.",
+        duration: 5000,
       })
 
-      setTimeout(() => {
-        router.push("/dashboard/output")
-      }, 1500)
+      // Removido: setTimeout(() => { router.push("/dashboard/output") }, 1500)
     } catch (error) {
       setShowLoadingDialog(false)
       setIsLoading(false)
@@ -388,12 +405,11 @@ export default function ExecutionPage() {
         // Último agente - gerar relatório final
         toast({
           title: "✅ Todos os agentes concluídos",
-          description: "Análise completa! Redirecionando para visualização...",
+          description: "Análise completa! Use o botão 'Visualizar Resposta' do Agente 3 para ver o relatório.",
+          duration: 5000,
         })
 
-        setTimeout(() => {
-          router.push("/dashboard/output")
-        }, 1500)
+        // Removido: setTimeout(() => { router.push("/dashboard/output") }, 1500)
       }
     } catch (error) {
       console.log("[v0] Error in manual execution:", error)
@@ -436,16 +452,46 @@ export default function ExecutionPage() {
     return true
   }
 
-  const buildPayload = () => {
-    return {
+  const buildPayload = (includeKnowledgeBase = false) => {
+    let knowledgeBase = ""
+
+    if (includeKnowledgeBase && selectedKnowledgeBase.length > 0) {
+      try {
+        const savedKnowledge = localStorage.getItem("rca_knowledge_base")
+        if (savedKnowledge) {
+          const documents = JSON.parse(savedKnowledge)
+          const selectedDocs = documents.filter((doc: any) => selectedKnowledgeBase.includes(doc.id))
+
+          if (selectedDocs && selectedDocs.length > 0) {
+            knowledgeBase = "\n\n=== BASE DE CONHECIMENTO ===\n"
+            selectedDocs.forEach((doc: any, index: number) => {
+              knowledgeBase += `\n--- Documento ${index + 1}: ${doc.name} ---\n`
+              knowledgeBase += `${doc.content}\n`
+            })
+            knowledgeBase += "\n=== FIM DA BASE DE CONHECIMENTO ===\n"
+            console.log("[v0] Base de conhecimento carregada para todos os agentes:", selectedDocs.length, "documentos")
+            console.log("[v0] Conteúdo da base de conhecimento:", knowledgeBase.substring(0, 500) + "...")
+          }
+        }
+      } catch (error) {
+        console.error("[v0] Erro ao carregar base de conhecimento:", error)
+      }
+    } else {
+      console.log("[v0] Nenhuma base de conhecimento selecionada ou includeKnowledgeBase é false")
+      console.log("[v0] selectedKnowledgeBase:", selectedKnowledgeBase)
+      console.log("[v0] includeKnowledgeBase:", includeKnowledgeBase)
+    }
+
+    const payload = {
       dur_min: Number.parseInt(caseData.duracao_minutos) || 0,
       reducao_pct: Number.parseFloat(caseData.reducao_percentual) || 0,
       custo: Number.parseFloat(caseData.custo_estimado) || 0,
       faturamento_1h: Number.parseFloat(caseData.faturamento_hora) || 0,
-      descricao: caseData.descricao,
-      tag: caseData.tag_equipamento,
-      patrimonio: caseData.patrimonio,
+      descricao: caseData.descricao + knowledgeBase, // Adicionando base de conhecimento à descrição
     }
+
+    console.log("[v0] Payload construído:", { includeKnowledgeBase, knowledgeBaseLength: knowledgeBase.length })
+    return payload
   }
 
   const saveProgress = () => {
@@ -465,6 +511,7 @@ export default function ExecutionPage() {
       showViewResponseButton,
       caseData,
       webhookURLs,
+      selectedKnowledgeBase,
       timestamp: new Date().toISOString(),
     }
 
@@ -472,7 +519,7 @@ export default function ExecutionPage() {
     localStorage.setItem("rca_execution_progress", JSON.stringify(progressData))
   }
 
-  const loadSavedProgress = () => {
+  const loadExecutionProgress = () => {
     try {
       const savedProgress = localStorage.getItem("rca_execution_progress")
       if (savedProgress) {
@@ -529,6 +576,7 @@ export default function ExecutionPage() {
             agent3: "https://n8n.grupobeely.com.br/webhook/terceiro",
           },
         )
+        setSelectedKnowledgeBase(progressData.selectedKnowledgeBase || [])
 
         toast({
           title: "📋 Progresso restaurado",
@@ -543,30 +591,26 @@ export default function ExecutionPage() {
     }
   }
 
-  useEffect(() => {
-    if (hasLoadedProgress) {
-      // Add a small delay to prevent immediate overwrite
-      const timeoutId = setTimeout(() => {
-        saveProgress()
-      }, 500)
-      return () => clearTimeout(timeoutId)
+  const loadAvailableDocuments = () => {
+    try {
+      const savedKnowledge = localStorage.getItem("rca_knowledge_base")
+      if (savedKnowledge) {
+        const documents = JSON.parse(savedKnowledge)
+        setAvailableDocuments(documents || [])
+        // Selecionar todos por padrão
+        setSelectedKnowledgeBase(documents?.map((doc: any) => doc.id) || [])
+      }
+    } catch (error) {
+      console.error("[v0] Erro ao carregar documentos:", error)
     }
-  }, [
-    executionMode,
-    currentAgent,
-    agentResponses,
-    agentStatus,
-    showViewResponseButton,
-    caseData,
-    webhookURLs,
-    hasLoadedProgress,
-  ])
+  }
 
   const resetExecution = () => {
     setCurrentAgent(1)
     setAgentResponses({ agent1: null, agent2: null, agent3: null })
     setAgentStatus({ agent1: "pending", agent2: "pending", agent3: "pending" })
     setShowViewResponseButton({ agent1: false, agent2: false, agent3: false })
+    setSelectedKnowledgeBase([])
     localStorage.removeItem("agent1_response")
     localStorage.removeItem("agent2_response")
     localStorage.removeItem("agent3_response")
@@ -642,6 +686,30 @@ export default function ExecutionPage() {
       router.push("/dashboard/monitoring")
     }
   }
+
+  const toggleDocumentSelection = (docId: string) => {
+    setSelectedKnowledgeBase((prev) => (prev.includes(docId) ? prev.filter((id) => id !== docId) : [...prev, docId]))
+  }
+
+  useEffect(() => {
+    if (hasLoadedProgress) {
+      // Add a small delay to prevent immediate overwrite
+      const timeoutId = setTimeout(() => {
+        saveProgress()
+      }, 500)
+      return () => clearTimeout(timeoutId)
+    }
+  }, [
+    executionMode,
+    currentAgent,
+    agentResponses,
+    agentStatus,
+    showViewResponseButton,
+    caseData,
+    webhookURLs,
+    selectedKnowledgeBase,
+    hasLoadedProgress,
+  ])
 
   return (
     <div className="space-y-6">
@@ -938,6 +1006,68 @@ export default function ExecutionPage() {
             </Alert>
           </CardContent>
         </Card>
+
+        {availableDocuments.length > 0 && (
+          <Card className="mb-6">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <BookOpen className="h-5 w-5" />
+                Base de Conhecimento
+              </CardTitle>
+              <CardDescription>
+                Selecione os documentos que serão enviados para o Agente 3 (Investigação)
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <div className="space-y-3">
+                {availableDocuments.map((doc) => (
+                  <div key={doc.id} className="flex items-center space-x-3 p-3 border rounded-lg">
+                    <Checkbox
+                      id={doc.id}
+                      checked={selectedKnowledgeBase.includes(doc.id)}
+                      onCheckedChange={() => toggleDocumentSelection(doc.id)}
+                    />
+                    <div className="flex-1">
+                      <label htmlFor={doc.id} className="text-sm font-medium cursor-pointer">
+                        {doc.name}
+                      </label>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        {doc.type === "pdf" ? "PDF" : "Texto"} • {doc.content.length} caracteres
+                      </p>
+                    </div>
+                    <Badge variant="outline" className="text-xs">
+                      {doc.type === "pdf" ? "PDF" : "TXT"}
+                    </Badge>
+                  </div>
+                ))}
+
+                <div className="flex items-center justify-between pt-2 border-t">
+                  <span className="text-sm text-muted-foreground">
+                    {selectedKnowledgeBase.length} de {availableDocuments.length} documentos selecionados
+                  </span>
+                  <div className="flex gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedKnowledgeBase([])}
+                      disabled={selectedKnowledgeBase.length === 0}
+                    >
+                      Desmarcar Todos
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => setSelectedKnowledgeBase(availableDocuments.map((doc) => doc.id))}
+                      disabled={selectedKnowledgeBase.length === availableDocuments.length}
+                    >
+                      Marcar Todos
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        )}
 
         <Card>
           <CardHeader>
