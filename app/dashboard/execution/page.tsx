@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { toast } from "react-hot-toast"
-import { webhookUrl } from "@/lib/storage"
+import { webhookUrl, prompts } from "@/lib/storage"
 import {
   Send,
   FileText,
@@ -30,13 +30,7 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 
-const currentPrompts = {
-  a1: "Prompt for Agent 1",
-  a2: "Prompt for Agent 2",
-  a3: "Prompt for Agent 3",
-}
-
-export default function ExecutionPage() {
+const ExecutionPage = () => {
   const router = useRouter()
 
   const [webhookURLs, setWebhookURLs] = useState({
@@ -84,8 +78,11 @@ export default function ExecutionPage() {
   const [hasLoadedProgress, setHasLoadedProgress] = useState(false)
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string[]>([])
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([])
-
-  const nextAgent = 1 // Declare the variable here
+  const [currentPrompts, setCurrentPrompts] = useState({
+    a1: "Prompt for Agent 1",
+    a2: "Prompt for Agent 2",
+    a3: "Prompt for Agent 3",
+  })
 
   useEffect(() => {
     const savedUrl = webhookUrl.load()
@@ -103,6 +100,24 @@ export default function ExecutionPage() {
     // Carregar documentos disponíveis
     loadAvailableDocuments()
   }, [hasLoadedProgress])
+
+  useEffect(() => {
+    const loadPrompts = () => {
+      try {
+        const loadedPrompts = prompts.load()
+        console.log("[v0] Prompts carregados do localStorage:", loadedPrompts)
+        setCurrentPrompts({
+          a1: loadedPrompts.a1 || "Prompt for Agent 1",
+          a2: loadedPrompts.a2 || "Prompt for Agent 2",
+          a3: loadedPrompts.a3 || "Prompt for Agent 3",
+        })
+      } catch (error) {
+        console.error("[v0] Erro ao carregar prompts:", error)
+      }
+    }
+
+    loadPrompts()
+  }, [])
 
   const executeAgent = async (agentNumber: number, inputData?: any) => {
     try {
@@ -1205,3 +1220,5 @@ export default function ExecutionPage() {
     </div>
   )
 }
+
+export default ExecutionPage
