@@ -22,6 +22,9 @@ import {
   Play,
   Pause,
   BookOpen,
+  Eye,
+  MessageCircle,
+  EyeOff,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
@@ -30,7 +33,7 @@ import { Progress } from "@/components/ui/progress"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 
-const ExecutionPage = () => {
+export default function ExecutionPage() {
   const router = useRouter()
 
   const [webhookURLs, setWebhookURLs] = useState({
@@ -75,6 +78,16 @@ const ExecutionPage = () => {
     agent3: false,
   })
 
+  const [viewResponseDialog, setViewResponseDialog] = useState<{
+    open: boolean
+    agentNum: number | null
+    lastResponse: string
+  }>({
+    open: false,
+    agentNum: null,
+    lastResponse: "",
+  })
+
   const [hasLoadedProgress, setHasLoadedProgress] = useState(false)
   const [selectedKnowledgeBase, setSelectedKnowledgeBase] = useState<string[]>([])
   const [availableDocuments, setAvailableDocuments] = useState<any[]>([])
@@ -83,6 +96,46 @@ const ExecutionPage = () => {
     a2: "Prompt for Agent 2",
     a3: "Prompt for Agent 3",
   })
+
+  const [continuousInteraction, setContinuousInteraction] = useState({
+    agent1: false,
+    agent2: false,
+    agent3: false,
+  })
+
+  const [interactionHistory, setInteractionHistory] = useState({
+    agent1: [],
+    agent2: [],
+    agent3: [],
+  })
+
+  const [showPreview, setShowPreview] = useState({
+    agent1: false,
+    agent2: false,
+    agent3: false,
+  })
+
+  const [chatMessages, setChatMessages] = useState({
+    agent1: [],
+    agent2: [],
+    agent3: [],
+  })
+
+  const [chatInput, setChatInput] = useState({
+    agent1: "",
+    agent2: "",
+    agent3: "",
+  })
+
+  const [isSendingMessage, setIsSendingMessage] = useState({
+    agent1: false,
+    agent2: false,
+    agent3: false,
+  })
+
+  const [expandedMessages, setExpandedMessages] = useState<{ [key: string]: boolean }>({})
+
+  const [hideLastResponse, setHideLastResponse] = useState(false)
 
   useEffect(() => {
     const savedUrl = webhookUrl.load()
@@ -118,6 +171,311 @@ const ExecutionPage = () => {
 
     loadPrompts()
   }, [])
+
+  const sendChatMessage = async (agentNumber: number) => {
+    const message = chatInput[`agent${agentNumber}`].trim()
+    if (!message) return
+
+    setIsSendingMessage((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: true,
+    }))
+
+    // Adicionar mensagem do usuário ao chat
+    const userMessage = {
+      id: Date.now(),
+      type: "user",
+      content: message,
+      timestamp: new Date().toISOString(),
+    }
+
+    setChatMessages((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], userMessage],
+    }))
+
+    // Limpar input
+    setChatInput((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: "",
+    }))
+
+    try {
+      const payload = await buildPayload(true)
+      const webhookURL = webhookURLs[`agent${agentNumber}`]
+
+      const requestData = {
+        prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
+        payload,
+        agent: agentNumber,
+        chatMessage: message,
+        type: "chat_interaction",
+      }
+
+      console.log(`[v0] Enviando mensagem de chat para Agent ${agentNumber}:`, message)
+
+      const response = await fetch(webhookURL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      })
+
+      if (response.ok) {
+        const responseData = await response.json()
+
+        const responseContent =
+          responseData.output ||
+          responseData.message?.content ||
+          (typeof responseData.message === "string" ? responseData.message : JSON.stringify(responseData))
+
+        if (!responseContent || responseContent.trim() === "" || responseContent === "{}") {
+          const rateLimitMessage = {
+            id: Date.now() + 1,
+            type: "system",
+            content:
+              "⚠️ Não foi possível obter resposta do agente. Isso pode ser devido ao rate limit do serviço. Aguarde até 60 segundos e tente novamente.",
+            timestamp: new Date().toISOString(),
+          }
+
+          setChatMessages((prev) => ({
+            ...prev,
+            [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], rateLimitMessage],
+          }))
+
+          toast({
+            title: "Rate Limit Detectado",
+            description: "Aguarde 60 segundos antes de tentar novamente",
+            variant: "destructive",
+          })
+        } else {
+          const agentMessage = {
+            id: Date.now() + 1,
+            type: "agent",
+            content: responseContent,
+            timestamp: new Date().toISOString(),
+          }
+
+          setChatMessages((prev) => ({
+            ...prev,
+            [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], agentMessage],
+          }))
+
+          toast({
+            title: "Mensagem Enviada",
+            description: `Resposta recebida do Agente ${agentNumber}`,
+          })
+        }
+      } else {
+        throw new Error(`HTTP ${response.status}`)
+      }
+    } catch (error) {
+      console.error(`[v0] Erro ao enviar mensagem para Agent ${agentNumber}:`, error)
+
+      const errorMessage = {
+        id: Date.now() + 2,
+        type: "system",
+        content:
+          "❌ Erro ao enviar mensagem. Se o problema persistir, pode ser devido ao rate limit. Aguarde até 60 segundos e tente novamente.",
+        timestamp: new Date().toISOString(),
+      }
+
+      setChatMessages((prev) => ({
+        ...prev,
+        [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], errorMessage],
+      }))
+
+      toast({
+        title: "Erro no Chat",
+        description: `Falha ao enviar mensagem para Agente ${agentNumber}`,
+        variant: "destructive",
+      })
+    } finally {
+      setIsSendingMessage((prev) => ({
+        ...prev,
+        [`agent${agentNumber}`]: false,
+      }))
+    }
+  }
+
+  const togglePreview = (agentNumber: number) => {
+    setShowPreview((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: !prev[`agent${agentNumber}`],
+    }))
+  }
+
+  const renderResponsePreview = (agentNumber: number) => {
+    const response = agentResponses[`agent${agentNumber}`]
+    if (!response) return <p className="text-muted-foreground">Nenhuma resposta disponível</p>
+
+    let content = ""
+    if (response.data && Array.isArray(response.data) && response.data[0]?.message?.content) {
+      content = response.data[0].message.content
+    } else if (response.data?.message?.content) {
+      content = response.data.message.content
+    } else if (response.data?.output) {
+      content = response.data.output
+    } else if (response.data?.html) {
+      content = response.data.html
+    } else {
+      content = JSON.stringify(response.data, null, 2)
+    }
+
+    return (
+      <div className="max-h-60 overflow-y-auto">
+        <pre className="whitespace-pre-wrap text-sm bg-muted p-3 rounded">
+          {content.length > 500 ? content.substring(0, 500) + "..." : content}
+        </pre>
+      </div>
+    )
+  }
+
+  const resendResponseToWebhook = async (
+    agentNumber: number,
+    responseContent: string,
+    conversationHistory: any[] = [],
+  ) => {
+    try {
+      console.log(`[v0] Reenviando resposta para Agent ${agentNumber}`)
+
+      const webhookUrl = webhookURLs[`agent${agentNumber}`]
+
+      const requestData = {
+        type: "continue_conversation",
+        previousResponse: responseContent,
+        conversationHistory: conversationHistory,
+        timestamp: new Date().toISOString(),
+        agent: agentNumber,
+      }
+
+      console.log(`[v0] Dados de continuação para Agent ${agentNumber}:`, requestData)
+
+      const response = await fetch(webhookUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestData),
+      })
+
+      const responseData = await response.text()
+      console.log(`[v0] Agent ${agentNumber} resposta de continuação:`, responseData)
+
+      let parsedResponse
+      try {
+        parsedResponse = JSON.parse(responseData)
+      } catch {
+        parsedResponse = { html: responseData, raw: responseData }
+      }
+
+      // Extrair conteúdo da resposta
+      let extractedContent = ""
+      if (parsedResponse && Array.isArray(parsedResponse) && parsedResponse[0]?.message?.content) {
+        extractedContent = parsedResponse[0].message.content
+      } else if (parsedResponse?.message?.content) {
+        extractedContent = parsedResponse.message.content
+      } else if (parsedResponse?.html) {
+        extractedContent = parsedResponse.html
+      } else if (typeof parsedResponse === "string") {
+        extractedContent = parsedResponse
+      } else {
+        extractedContent = JSON.stringify(parsedResponse, null, 2)
+      }
+
+      // Atualizar histórico de interações
+      setInteractionHistory((prev) => ({
+        ...prev,
+        [`agent${agentNumber}`]: [
+          ...prev[`agent${agentNumber}`],
+          {
+            type: "continuation",
+            timestamp: new Date().toISOString(),
+            sent: responseContent,
+            received: extractedContent,
+          },
+        ],
+      }))
+
+      // Salvar resposta de continuação
+      const continuationResponse = {
+        id: `agent${agentNumber}_continuation_${Date.now()}`,
+        agentName:
+          agentNumber === 1
+            ? "Agente Classificador"
+            : agentNumber === 2
+              ? "Agente de Causas"
+              : "Agente de Investigação",
+        status: response.ok ? "completed" : "error",
+        timestamp: new Date().toISOString(),
+        response: extractedContent,
+        processingTime: null,
+        error: response.ok ? null : "Erro na continuação da conversa",
+        type: "continuation",
+      }
+
+      const existingResponses = JSON.parse(localStorage.getItem("rca_agent_responses") || "[]")
+      const updatedResponses = [...existingResponses, continuationResponse]
+      localStorage.setItem("rca_agent_responses", JSON.stringify(updatedResponses))
+
+      window.dispatchEvent(new CustomEvent("agent-response", { detail: continuationResponse }))
+
+      return { success: true, content: extractedContent, response: parsedResponse }
+    } catch (error) {
+      console.log(`[v0] Erro ao reenviar para Agent ${agentNumber}:`, error)
+      return { success: false, error: error.message }
+    }
+  }
+
+  const startContinuousInteraction = async (agentNumber: number) => {
+    const lastResponse = agentResponses[`agent${agentNumber}`]
+    if (!lastResponse) {
+      toast({
+        title: "Erro",
+        description: "Nenhuma resposta encontrada para continuar a interação",
+        variant: "destructive",
+      })
+      return
+    }
+
+    setContinuousInteraction((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: true,
+    }))
+
+    // Extrair conteúdo da última resposta
+    let responseContent = ""
+    if (lastResponse.data && Array.isArray(lastResponse.data) && lastResponse.data[0]?.message?.content) {
+      responseContent = lastResponse.data[0].message.content
+    } else if (lastResponse.data?.message?.content) {
+      responseContent = lastResponse.data.message.content
+    } else if (lastResponse.data?.html) {
+      responseContent = lastResponse.data.html
+    } else {
+      responseContent = JSON.stringify(lastResponse.data, null, 2)
+    }
+
+    const result = await resendResponseToWebhook(
+      agentNumber,
+      responseContent,
+      interactionHistory[`agent${agentNumber}`],
+    )
+
+    if (result.success) {
+      toast({
+        title: "Interação Contínua",
+        description: `Resposta reenviada para Agente ${agentNumber} com sucesso`,
+      })
+    } else {
+      toast({
+        title: "Erro na Interação",
+        description: `Falha ao reenviar para Agente ${agentNumber}: ${result.error}`,
+        variant: "destructive",
+      })
+    }
+
+    setContinuousInteraction((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: false,
+    }))
+  }
 
   const executeAgent = async (agentNumber: number, inputData?: any) => {
     try {
@@ -190,6 +548,33 @@ const ExecutionPage = () => {
       } else {
         // Fallback para JSON completo
         extractedContent = JSON.stringify(parsedResponse, null, 2)
+      }
+
+      if (!extractedContent || extractedContent.trim() === "" || extractedContent === "{}") {
+        console.log(`[v0] Rate limit detectado para Agent ${agentNumber}`)
+
+        const agentResponse = {
+          agent: agentNumber,
+          success: false,
+          status: response.status,
+          data: parsedResponse,
+          extractedContent:
+            "⚠️ Resposta vazia recebida. Isso pode ser devido ao rate limit do serviço. Aguarde até 60 segundos e tente executar novamente.",
+          error: "Rate limit ou resposta vazia detectada",
+        }
+
+        setAgentResponses((prev) => ({
+          ...prev,
+          [`agent${agentNumber}`]: agentResponse,
+        }))
+
+        toast({
+          title: "Rate Limit Detectado",
+          description: `Agente ${agentNumber}: Aguarde 60 segundos antes de tentar novamente`,
+          variant: "destructive",
+        })
+
+        return agentResponse
       }
 
       const agentResponse = {
@@ -467,6 +852,24 @@ const ExecutionPage = () => {
     return true
   }
 
+  const openViewResponseDialog = (agentNum: number) => {
+    const agentResponse = agentResponses[`agent${agentNum}`]
+    let lastResponse = ""
+
+    if (agentResponse?.data?.message?.content) {
+      lastResponse =
+        typeof agentResponse.data.message.content === "string"
+          ? agentResponse.data.message.content
+          : JSON.stringify(agentResponse.data.message.content, null, 2)
+    }
+
+    setViewResponseDialog({
+      open: true,
+      agentNum,
+      lastResponse,
+    })
+  }
+
   const buildPayload = (includeKnowledgeBase = false) => {
     let knowledgeBase = ""
 
@@ -566,7 +969,7 @@ const ExecutionPage = () => {
           // No completed agents, use saved state as-is
           setCurrentAgent(progressData.currentAgent || 1)
           setAgentResponses(progressData.agentResponses || { agent1: null, agent2: null, agent3: null })
-          setAgentStatus(progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: "pending" })
+          setAgentStatus(progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: null })
           setShowViewResponseButton(
             progressData.showViewResponseButton || { agent1: false, agent2: false, agent3: false },
           )
@@ -727,7 +1130,7 @@ const ExecutionPage = () => {
   ])
 
   return (
-    <div className="space-y-6">
+    <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Análise de Falhas</h1>
         <p className="text-muted-foreground">Sistema de análise com 3 agentes especializados</p>
@@ -849,6 +1252,128 @@ const ExecutionPage = () => {
               <div className="w-2 h-2 bg-primary rounded-full animate-bounce"></div>
             </div>
           </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog
+        open={viewResponseDialog.open}
+        onOpenChange={(open) => {
+          setViewResponseDialog((prev) => ({ ...prev, open }))
+          if (!open) setHideLastResponse(false)
+        }}
+      >
+        <DialogContent className="sm:max-w-4xl max-h-[80vh] overflow-hidden">
+          <DialogHeader>
+            <DialogTitle className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Eye className="h-5 w-5" />
+                Chat com Agente {viewResponseDialog.agentNum}
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setHideLastResponse(!hideLastResponse)}
+                className="flex items-center gap-2"
+              >
+                {hideLastResponse ? (
+                  <>
+                    <EyeOff className="h-4 w-4" />
+                    Mostrar Resposta
+                  </>
+                ) : (
+                  <>
+                    <Eye className="h-4 w-4" />
+                    Mostrar somente o chat
+                  </>
+                )}
+              </Button>
+            </DialogTitle>
+          </DialogHeader>
+
+          {viewResponseDialog.agentNum && (
+            <div className={`flex flex-col ${hideLastResponse ? "h-[70vh]" : "h-[60vh]"}`}>
+              {!hideLastResponse && (
+                <div className="mb-4 p-4 bg-muted/50 rounded-lg">
+                  <h4 className="font-medium mb-2">Última Resposta:</h4>
+                  <div className="text-sm whitespace-pre-wrap max-h-32 overflow-y-auto">
+                    {viewResponseDialog.lastResponse}
+                  </div>
+                </div>
+              )}
+
+              <div
+                className={`flex-1 overflow-y-auto space-y-2 p-2 border rounded-lg bg-background ${hideLastResponse ? "min-h-[50vh]" : ""}`}
+              >
+                {chatMessages[`agent${viewResponseDialog.agentNum}`]?.map((msg) => {
+                  const messageContent = typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+
+                  return (
+                    <div key={msg.id} className={`flex ${msg.type === "user" ? "justify-end" : "justify-start"}`}>
+                      <div
+                        className={`max-w-[80%] p-3 rounded-lg shadow-sm ${
+                          msg.type === "user"
+                            ? "bg-primary text-primary-foreground"
+                            : "bg-secondary text-secondary-foreground"
+                        }`}
+                      >
+                        <div className="break-words whitespace-pre-wrap">
+                          {expandedMessages[msg.id] || messageContent.length <= 200
+                            ? messageContent
+                            : messageContent.substring(0, 200) + "..."}
+                        </div>
+                        {messageContent.length > 200 && (
+                          <button
+                            onClick={() =>
+                              setExpandedMessages((prev) => ({
+                                ...prev,
+                                [msg.id]: !prev[msg.id],
+                              }))
+                            }
+                            className="text-xs underline mt-2 opacity-70 hover:opacity-100 transition-opacity"
+                          >
+                            {expandedMessages[msg.id] ? "Ver menos" : "Ver mais"}
+                          </button>
+                        )}
+                        <div className="text-xs opacity-60 mt-1">{new Date(msg.timestamp).toLocaleTimeString()}</div>
+                      </div>
+                    </div>
+                  )
+                })}
+                {chatMessages[`agent${viewResponseDialog.agentNum}`]?.length === 0 && (
+                  <div className="text-center text-muted-foreground py-8">
+                    Nenhuma mensagem ainda. Comece uma conversa!
+                  </div>
+                )}
+              </div>
+
+              {/* Input do chat */}
+              <div className="flex gap-2 mt-4">
+                <Input
+                  placeholder="Digite sua mensagem..."
+                  value={chatInput[`agent${viewResponseDialog.agentNum}`] || ""}
+                  onChange={(e) =>
+                    setChatInput((prev) => ({
+                      ...prev,
+                      [`agent${viewResponseDialog.agentNum}`]: e.target.value,
+                    }))
+                  }
+                  onKeyPress={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault()
+                      sendChatMessage(viewResponseDialog.agentNum!)
+                    }
+                  }}
+                />
+                <Button
+                  onClick={() => sendChatMessage(viewResponseDialog.agentNum!)}
+                  disabled={!chatInput[`agent${viewResponseDialog.agentNum}`]?.trim()}
+                  size="sm"
+                >
+                  <Send className="w-4 h-4" />
+                </Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
 
@@ -1142,16 +1667,112 @@ const ExecutionPage = () => {
                     {agentNum === 1 ? "Classificação" : agentNum === 2 ? "Análise de Causas" : "Plano de Investigação"}
                   </p>
 
+                  {agentResponses[`agent${agentNum}`] && (
+                    <div className="mb-3 space-y-2">
+                      <div className="text-xs font-medium">Chat com Agente {agentNum}</div>
+
+                      {/* Mensagens do chat */}
+                      {chatMessages[`agent${agentNum}`].length > 0 && (
+                        <div className="max-h-32 overflow-y-auto space-y-1 bg-muted/50 p-2 rounded text-xs">
+                          {chatMessages[`agent${agentNum}`].map((msg) => (
+                            <div key={msg.id} className={`${msg.type === "user" ? "text-right" : "text-left"}`}>
+                              <div
+                                className={`max-w-[80%] p-2 rounded-lg text-sm ${
+                                  msg.type === "user"
+                                    ? "bg-primary text-primary-foreground"
+                                    : "bg-secondary text-secondary-foreground"
+                                }`}
+                              >
+                                <div className="break-words">
+                                  {(() => {
+                                    const messageContent =
+                                      typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+                                    return expandedMessages[msg.id] || messageContent.length <= 100
+                                      ? messageContent
+                                      : messageContent.substring(0, 100) + "..."
+                                  })()}
+                                </div>
+                                {(() => {
+                                  const messageContent =
+                                    typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
+                                  return (
+                                    messageContent.length > 100 && (
+                                      <button
+                                        onClick={() =>
+                                          setExpandedMessages((prev) => ({
+                                            ...prev,
+                                            [msg.id]: !prev[msg.id],
+                                          }))
+                                        }
+                                        className="text-xs underline mt-1 opacity-70 hover:opacity-100"
+                                      >
+                                        {expandedMessages[msg.id] ? "Ver menos" : "Ver mais"}
+                                      </button>
+                                    )
+                                  )
+                                })()}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {/* Input do chat */}
+                      <div className="flex gap-1">
+                        <Input
+                          placeholder="Digite sua mensagem..."
+                          value={chatInput[`agent${agentNum}`]}
+                          onChange={(e) =>
+                            setChatInput((prev) => ({
+                              ...prev,
+                              [`agent${agentNum}`]: e.target.value,
+                            }))
+                          }
+                          onKeyPress={(e) => {
+                            if (e.key === "Enter" && !e.shiftKey) {
+                              e.preventDefault()
+                              sendChatMessage(agentNum)
+                            }
+                          }}
+                          disabled={isSendingMessage[`agent${agentNum}`]}
+                          className="text-xs"
+                        />
+                        <Button
+                          onClick={() => sendChatMessage(agentNum)}
+                          disabled={isSendingMessage[`agent${agentNum}`] || !chatInput[`agent${agentNum}`].trim()}
+                          size="sm"
+                        >
+                          {isSendingMessage[`agent${agentNum}`] ? (
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                          ) : (
+                            <Send className="w-3 h-3" />
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+
                   {showViewResponseButton[`agent${agentNum}`] && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => handleViewResponse(agentNum)}
-                      className="w-full text-xs"
-                    >
-                      <FileText className="h-3 w-3 mr-1" />
-                      Visualizar Resposta
-                    </Button>
+                    <div className="flex flex-col gap-2">
+                      <Button
+                        onClick={() => openViewResponseDialog(agentNum)}
+                        variant="outline"
+                        size="sm"
+                        className="w-full"
+                      >
+                        <Eye className="w-4 h-4 mr-2" />
+                        Visualizar Resposta
+                      </Button>
+                      <Button
+                        onClick={() => startContinuousInteraction(agentNum)}
+                        variant="secondary"
+                        size="sm"
+                        className="w-full"
+                      >
+                        <MessageCircle className="w-4 h-4 mr-2" />
+                        Continuar Interação
+                      </Button>
+                    </div>
                   )}
                 </div>
               ))}
@@ -1220,5 +1841,3 @@ const ExecutionPage = () => {
     </div>
   )
 }
-
-export default ExecutionPage
