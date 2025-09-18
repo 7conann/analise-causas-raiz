@@ -18,6 +18,7 @@ const navigation = [
   { name: "Monitoramento", href: "/dashboard/monitoring", icon: Activity },
   { name: "Visualização", href: "/dashboard/output", icon: Eye },
   { name: "Treinamento", href: "/dashboard/training", icon: BookOpen },
+  
 ]
 
 const bottomNavigation = [
