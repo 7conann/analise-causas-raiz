@@ -173,7 +173,8 @@ export default function ExecutionPage() {
   }, [])
 
   const sendChatMessage = async (agentNumber: number) => {
-    const message = chatInput[`agent${agentNumber}`].trim()
+    const inputValue = chatInput[`agent${agentNumber}`] || ""
+    const message = inputValue.trim()
     if (!message) return
 
     setIsSendingMessage((prev) => ({
@@ -204,15 +205,29 @@ export default function ExecutionPage() {
       const payload = await buildPayload(true)
       const webhookURL = webhookURLs[`agent${agentNumber}`]
 
+      let previousResponse = null
+      if (agentNumber > 1) {
+        const previousAgentKey = `agent${agentNumber - 1}`
+        if (agentResponses[previousAgentKey]?.data) {
+          previousResponse = agentResponses[previousAgentKey].data
+          console.log(`[v0] Enviando resposta do Agent ${agentNumber - 1} como contexto para Agent ${agentNumber}`)
+        }
+      }
+
       const requestData = {
         prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
         payload,
         agent: agentNumber,
         chatMessage: message,
         type: "chat_interaction",
+        ...(previousResponse && { previousResponse }),
       }
 
       console.log(`[v0] Enviando mensagem de chat para Agent ${agentNumber}:`, message)
+      console.log(
+        `[v0] Contexto anterior (Agent ${agentNumber - 1}):`,
+        previousResponse ? "Incluído" : "Não disponível",
+      )
 
       const response = await fetch(webhookURL, {
         method: "POST",
@@ -228,9 +243,12 @@ export default function ExecutionPage() {
           responseData.message?.content ||
           (typeof responseData.message === "string" ? responseData.message : JSON.stringify(responseData))
 
-        if (!responseContent || responseContent.trim() === "" || responseContent === "{}") {
+        const safeResponseContent =
+          typeof responseContent === "string" ? responseContent : String(responseContent || "")
+
+        if (!safeResponseContent || safeResponseContent.trim() === "" || safeResponseContent === "{}") {
           const rateLimitMessage = {
-            id: Date.now() + 1,
+            id: Date.now(),
             type: "system",
             content:
               "⚠️ Não foi possível obter resposta do agente. Isso pode ser devido ao rate limit do serviço. Aguarde até 60 segundos e tente novamente.",
@@ -550,7 +568,9 @@ export default function ExecutionPage() {
         extractedContent = JSON.stringify(parsedResponse, null, 2)
       }
 
-      if (!extractedContent || extractedContent.trim() === "" || extractedContent === "{}") {
+      const contentAsString = typeof extractedContent === "string" ? extractedContent : JSON.stringify(extractedContent)
+
+      if (!extractedContent || contentAsString.trim() === "" || contentAsString === "{}") {
         console.log(`[v0] Rate limit detectado para Agent ${agentNumber}`)
 
         const agentResponse = {
@@ -1346,10 +1366,9 @@ export default function ExecutionPage() {
                 )}
               </div>
 
-              {/* Input do chat */}
-              <div className="flex gap-2 mt-4">
-                <Input
-                  placeholder="Digite sua mensagem..."
+              <div className="mt-4 space-y-3">
+                <Textarea
+                  placeholder={`Digite sua mensagem para o Agente ${viewResponseDialog.agentNum}...`}
                   value={chatInput[`agent${viewResponseDialog.agentNum}`] || ""}
                   onChange={(e) =>
                     setChatInput((prev) => ({
@@ -1357,19 +1376,27 @@ export default function ExecutionPage() {
                       [`agent${viewResponseDialog.agentNum}`]: e.target.value,
                     }))
                   }
-                  onKeyPress={(e) => {
-                    if (e.key === "Enter" && !e.shiftKey) {
-                      e.preventDefault()
-                      sendChatMessage(viewResponseDialog.agentNum!)
-                    }
-                  }}
+                  className="min-h-[80px] resize-none w-full"
                 />
                 <Button
                   onClick={() => sendChatMessage(viewResponseDialog.agentNum!)}
-                  disabled={!chatInput[`agent${viewResponseDialog.agentNum}`]?.trim()}
-                  size="sm"
+                  disabled={
+                    isSendingMessage[`agent${viewResponseDialog.agentNum}`] ||
+                    !(chatInput[`agent${viewResponseDialog.agentNum}`] || "").trim()
+                  }
+                  className="w-full"
                 >
-                  <Send className="w-4 h-4" />
+                  {isSendingMessage[`agent${viewResponseDialog.agentNum}`] ? (
+                    <>
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                      Enviando...
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4 mr-2" />
+                      Enviar Mensagem
+                    </>
+                  )}
                 </Button>
               </div>
             </div>
@@ -1718,9 +1745,9 @@ export default function ExecutionPage() {
                       )}
 
                       {/* Input do chat */}
-                      <div className="flex gap-1">
-                        <Input
-                          placeholder="Digite sua mensagem..."
+                      <div className="flex gap-1 flex-col">
+                        <Textarea
+                          placeholder={`Digite sua mensagem para o Agente ${agentNum}...`}
                           value={chatInput[`agent${agentNum}`]}
                           onChange={(e) =>
                             setChatInput((prev) => ({
@@ -1728,19 +1755,14 @@ export default function ExecutionPage() {
                               [`agent${agentNum}`]: e.target.value,
                             }))
                           }
-                          onKeyPress={(e) => {
-                            if (e.key === "Enter" && !e.shiftKey) {
-                              e.preventDefault()
-                              sendChatMessage(agentNum)
-                            }
-                          }}
-                          disabled={isSendingMessage[`agent${agentNum}`]}
-                          className="text-xs"
+                          className="min-h-[80px] resize-none"
                         />
                         <Button
                           onClick={() => sendChatMessage(agentNum)}
-                          disabled={isSendingMessage[`agent${agentNum}`] || !chatInput[`agent${agentNum}`].trim()}
-                          size="sm"
+                          disabled={
+                            isSendingMessage[`agent${agentNum}`] || !(chatInput[`agent${agentNum}`] || "").trim()
+                          }
+                          className="w-full"
                         >
                           {isSendingMessage[`agent${agentNum}`] ? (
                             <Loader2 className="w-3 h-3 animate-spin" />
