@@ -873,6 +873,13 @@ export default function ExecutionPage() {
   }
 
   const openViewResponseDialog = (agentNum: number) => {
+    if (agentNum === 3) {
+      // Para Agente 3, redirecionar para aba de visualização
+      handleViewResponse(3)
+      return
+    }
+
+    // Para outros agentes, manter comportamento atual do dialog
     const agentResponse = agentResponses[`agent${agentNum}`]
     let lastResponse = ""
 

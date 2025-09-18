@@ -26,6 +26,7 @@ interface SavedResponse {
   response: any
   agent?: number
   mode?: string
+  isLatest?: boolean
 }
 
 const possibleKeys = ["rca_last_response", "beely_last_response", "last_webhook_response"]
@@ -173,6 +174,29 @@ export default function OutputPage() {
       console.log("[v0] Loading available responses...")
       const responses: any[] = []
 
+      const executionProgress = localStorage.getItem("rca_execution_progress")
+      if (executionProgress) {
+        try {
+          const progress = JSON.parse(executionProgress)
+          if (progress.agentResponses?.agent3) {
+            const value = progress.agentResponses.agent3
+
+            if (value && value.data) {
+              responses.push({
+                id: `execution_agent3_latest`,
+                agentName: "Agente de Investigação",
+                timestamp: progress.timestamp || new Date().toISOString(),
+                response: value.data,
+                agent: 3,
+                isLatest: true, // Marcar como mais recente
+              })
+            }
+          }
+        } catch (err) {
+          console.error("[v0] Error parsing execution progress:", err)
+        }
+      }
+
       const agent3History = localStorage.getItem("rca_agent3_history")
       if (agent3History) {
         try {
@@ -199,29 +223,6 @@ export default function OutputPage() {
         }
       }
 
-      // Carregar do execution progress (compatibilidade)
-      const executionProgress = localStorage.getItem("rca_execution_progress")
-      if (executionProgress) {
-        try {
-          const progress = JSON.parse(executionProgress)
-          if (progress.agentResponses?.agent3) {
-            const value = progress.agentResponses.agent3
-
-            if (value && value.data) {
-              responses.push({
-                id: `execution_agent3`,
-                agentName: "Agente de Investigação",
-                timestamp: progress.timestamp || new Date().toISOString(),
-                response: value.data,
-                agent: 3,
-              })
-            }
-          }
-        } catch (err) {
-          console.error("[v0] Error parsing execution progress:", err)
-        }
-      }
-
       // Carregar resposta individual do agente 3 (compatibilidade)
       const agent3Response = localStorage.getItem("rca_agent_3_response")
       if (agent3Response) {
@@ -241,15 +242,20 @@ export default function OutputPage() {
         }
       }
 
-      // Remover duplicatas baseado no ID e ordenar por timestamp (mais recente primeiro)
       const uniqueResponses = responses
         .filter((response, index, self) => index === self.findIndex((r) => r.id === response.id))
-        .sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime())
+        .sort((a, b) => {
+          // Priorizar resposta marcada como mais recente
+          if (a.isLatest && !b.isLatest) return -1
+          if (!a.isLatest && b.isLatest) return 1
+          // Depois ordenar por timestamp
+          return new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+        })
 
       console.log("[v0] Available Agent 3 responses:", uniqueResponses.length, "total")
       setAvailableResponses(uniqueResponses)
 
-      // Auto-selecionar a primeira resposta disponível do Agent 3
+      // Auto-selecionar a primeira resposta disponível do Agent 3 (sempre a mais recente)
       if (uniqueResponses.length > 0) {
         const defaultResponse = uniqueResponses[0]
         setSelectedResponseId(defaultResponse.id)
@@ -298,11 +304,18 @@ export default function OutputPage() {
 
     const handleStorageChange = (e: StorageEvent) => {
       console.log("[v0] Storage change detected:", e.key, e.newValue)
-      const agentKeys = ["rca_agent_3_response", "rca_agent_2_response", "rca_agent_1_response"]
+      const agentKeys = [
+        "rca_agent_3_response",
+        "rca_agent_2_response",
+        "rca_agent_1_response",
+        "rca_execution_progress",
+      ]
       const relevantKeys = [...agentKeys, ...possibleKeys]
       if (relevantKeys.includes(e.key || "")) {
         console.log("[v0] Relevant storage change detected, reloading...")
-        loadAvailableResponses()
+        setTimeout(() => {
+          loadAvailableResponses()
+        }, 100) // Pequeno delay para garantir que os dados foram salvos
       }
     }
 
