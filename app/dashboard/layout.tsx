@@ -18,12 +18,13 @@ const navigation = [
   { name: "Monitoramento", href: "/dashboard/monitoring", icon: Activity },
   { name: "Visualização", href: "/dashboard/output", icon: Eye },
   { name: "Treinamento", href: "/dashboard/training", icon: BookOpen },
-  
+
 ]
 
 const bottomNavigation = [
   { name: "Ajuda", href: "/dashboard/help", icon: HelpCircle },
   { name: "Configurações", href: "/dashboard/config", icon: Settings },
+  
 ]
 
 export default function DashboardLayout({
