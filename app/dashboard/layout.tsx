@@ -24,7 +24,6 @@ const navigation = [
 const bottomNavigation = [
   { name: "Ajuda", href: "/dashboard/help", icon: HelpCircle },
   { name: "Configurações", href: "/dashboard/config", icon: Settings },
-  
 ]
 
 export default function DashboardLayout({
