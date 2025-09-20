@@ -1959,16 +1959,16 @@ export default function ExecutionPage() {
             {/* Status dos agentes */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {/* Agente 1 */}
-              <Card className="relative border-blue-200 bg-blue-50/30">
+              <Card className="relative border-border bg-background">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
-                        <span className="text-lg font-bold text-blue-700">1</span>
+                        <span className="text-lg font-bold text-black">1</span>
                       </div>
                       <div>
-                        <CardTitle className="text-lg text-blue-700">Agente 1</CardTitle>
-                        <p className="text-sm text-blue-600">Classificação</p>
+                        <CardTitle className="text-lg text-white">Agente 1</CardTitle>
+                        <p className="text-sm text-white">Classificação</p>
                       </div>
                     </div>
                     <Badge
@@ -2011,7 +2011,7 @@ export default function ExecutionPage() {
                           className="w-full"
                         >
                           <Eye className="w-4 h-4 mr-2" />
-                          Visualizar
+                          Abrir interação
                         </Button>
                         <Button
                           onClick={() => executeIndividualAgent(1)}
@@ -2039,16 +2039,16 @@ export default function ExecutionPage() {
               </Card>
 
               {/* Agente 2 */}
-              <Card className="relative border-green-200 bg-green-50/30">
+              <Card className="relative border-border bg-background">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-                        <span className="text-lg font-bold text-green-700">2</span>
+                        <span className="text-lg font-bold text-black">2</span>
                       </div>
                       <div>
-                        <CardTitle className="text-lg text-green-700">Agente 2</CardTitle>
-                        <p className="text-sm text-green-600">Causas</p>
+                        <CardTitle className="text-lg text-white">Agente 2</CardTitle>
+                        <p className="text-sm text-white">Causas</p>
                       </div>
                     </div>
                     <Badge
@@ -2091,7 +2091,7 @@ export default function ExecutionPage() {
                           className="w-full"
                         >
                           <Eye className="w-4 h-4 mr-2" />
-                          Visualizar
+                          Abrir interação
                         </Button>
                         <Button
                           onClick={() => executeIndividualAgent(2)}
@@ -2119,16 +2119,16 @@ export default function ExecutionPage() {
               </Card>
 
               {/* Agente 3 */}
-              <Card className="relative border-orange-200 bg-orange-50/30">
+              <Card className="relative border-border bg-background">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
-                        <span className="text-lg font-bold text-orange-700">3</span>
+                        <span className="text-lg font-bold text-black">3</span>
                       </div>
                       <div>
-                        <CardTitle className="text-lg text-orange-700">Agente 3</CardTitle>
-                        <p className="text-sm text-orange-600">Investigação</p>
+                        <CardTitle className="text-lg text-white">Agente 3</CardTitle>
+                        <p className="text-sm text-white">Investigação</p>
                       </div>
                     </div>
                     <Badge
@@ -2199,16 +2199,16 @@ export default function ExecutionPage() {
               </Card>
 
               {/* Agente 4 */}
-              <Card className="relative border-purple-200 bg-purple-50/30">
+              <Card className="relative border-border bg-background">
                 <CardHeader className="pb-3">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-3">
                       <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
-                        <span className="text-lg font-bold text-purple-700">4</span>
+                        <span className="text-lg font-bold text-black">4</span>
                       </div>
                       <div>
-                        <CardTitle className="text-lg text-purple-700">Agente 4</CardTitle>
-                        <p className="text-sm text-purple-600">5 Porquês</p>
+                        <CardTitle className="text-lg text-white">Agente 4</CardTitle>
+                        <p className="text-sm text-white">5 Porquês</p>
                       </div>
                     </div>
                     <Badge variant={getStatusVariant(agentStatus.agent4)}>{getStatusText(agentStatus.agent4)}</Badge>
@@ -2235,7 +2235,7 @@ export default function ExecutionPage() {
                           className="w-full"
                         >
                           <Eye className="w-4 h-4 mr-2" />
-                          Visualizar
+                          Abrir interação
                         </Button>
                         <Button
                           onClick={() => executeIndividualAgent(4)}
