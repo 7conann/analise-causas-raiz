@@ -25,6 +25,8 @@ import {
   Eye,
   MessageCircle,
   EyeOff,
+  RotateCcw,
+  RefreshCw,
 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { useRouter } from "next/navigation"
@@ -40,6 +42,7 @@ export default function ExecutionPage() {
     agent1: "https://n8n.grupobeely.com.br/webhook/d620f8b0-a685-4eb7-a9db-367431e11b8e",
     agent2: "https://n8n.grupobeely.com.br/webhook/segundo",
     agent3: "https://n8n.grupobeely.com.br/webhook/terceiro",
+    agent4: "https://n8n.grupobeely.com.br/webhook/quarto",
   })
 
   const [isLoading, setIsLoading] = useState(false)
@@ -51,11 +54,13 @@ export default function ExecutionPage() {
     agent1: null,
     agent2: null,
     agent3: null,
+    agent4: null,
   })
   const [agentStatus, setAgentStatus] = useState({
     agent1: "pending", // pending, processing, completed, error
     agent2: "pending",
     agent3: "pending",
+    agent4: "pending",
   })
 
   const [caseData, setCaseData] = useState({
@@ -76,14 +81,15 @@ export default function ExecutionPage() {
     agent1: false,
     agent2: false,
     agent3: false,
+    agent4: false,
   })
 
   const [viewResponseDialog, setViewResponseDialog] = useState<{
-    open: boolean
+    isOpen: boolean
     agentNum: number | null
     lastResponse: string
   }>({
-    open: false,
+    isOpen: false,
     agentNum: null,
     lastResponse: "",
   })
@@ -95,42 +101,50 @@ export default function ExecutionPage() {
     a1: "Prompt for Agent 1",
     a2: "Prompt for Agent 2",
     a3: "Prompt for Agent 3",
+    a4: "Prompt for Agent 4", // Added prompt for Agent 4
   })
 
   const [continuousInteraction, setContinuousInteraction] = useState({
     agent1: false,
     agent2: false,
     agent3: false,
+    agent4: false,
   })
 
   const [interactionHistory, setInteractionHistory] = useState({
     agent1: [],
     agent2: [],
     agent3: [],
+    agent4: [], // Added interaction history for Agent 4
   })
 
   const [showPreview, setShowPreview] = useState({
     agent1: false,
     agent2: false,
     agent3: false,
+    agent4: false, // Added showPreview for Agent 4
   })
 
   const [chatMessages, setChatMessages] = useState({
     agent1: [],
     agent2: [],
     agent3: [],
+    agent4: [], // Added chat messages for Agent 4
   })
 
-  const [chatInput, setChatInput] = useState({
+  // Renamed chatInput to chatInputs and agent4 to agent4 to match the update
+  const [chatInputs, setChatInputs] = useState({
     agent1: "",
     agent2: "",
     agent3: "",
+    agent4: "", // Added agent4 to initial state to prevent undefined values
   })
 
   const [isSendingMessage, setIsSendingMessage] = useState({
     agent1: false,
     agent2: false,
     agent3: false,
+    agent4: false,
   })
 
   const [expandedMessages, setExpandedMessages] = useState<{ [key: string]: boolean }>({})
@@ -163,6 +177,7 @@ export default function ExecutionPage() {
           a1: loadedPrompts.a1 || "Prompt for Agent 1",
           a2: loadedPrompts.a2 || "Prompt for Agent 2",
           a3: loadedPrompts.a3 || "Prompt for Agent 3",
+          a4: loadedPrompts.a4 || "Prompt for Agent 4", // Load prompt for Agent 4
         })
       } catch (error) {
         console.error("[v0] Erro ao carregar prompts:", error)
@@ -172,8 +187,29 @@ export default function ExecutionPage() {
     loadPrompts()
   }, [])
 
+  const updateAgentResponseFromChat = (agentNumber: number, newResponse: string) => {
+    console.log(`[v0] Atualizando resposta do Agent ${agentNumber} após interação no chat`)
+
+    const updatedResponse = {
+      agent: agentNumber,
+      success: true,
+      status: 200,
+      data: { output: newResponse },
+      extractedContent: newResponse,
+      timestamp: new Date().toISOString(),
+      updatedFromChat: true,
+    }
+
+    setAgentResponses((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: updatedResponse,
+    }))
+
+    console.log(`[v0] Resposta do Agent ${agentNumber} atualizada:`, updatedResponse)
+  }
+
   const sendChatMessage = async (agentNumber: number) => {
-    const inputValue = chatInput[`agent${agentNumber}`] || ""
+    const inputValue = chatInputs[`agent${agentNumber}`] || ""
     const message = inputValue.trim()
     if (!message) return
 
@@ -196,14 +232,29 @@ export default function ExecutionPage() {
     }))
 
     // Limpar input
-    setChatInput((prev) => ({
+    setChatInputs((prev) => ({
       ...prev,
       [`agent${agentNumber}`]: "",
     }))
 
     try {
-      const payload = await buildPayload(true)
+      const interactionPayload = {
+        dur_min: Number.parseInt(caseData.duracao_minutos) || 0,
+        reducao_pct: Number.parseFloat(caseData.reducao_percentual) || 0,
+        custo: Number.parseFloat(caseData.custo_estimado) || 0,
+        faturamento_1h: Number.parseFloat(caseData.faturamento_hora) || 0,
+        descricao: message, // Enviar apenas a mensagem como descrição
+      }
+
       const webhookURL = webhookURLs[`agent${agentNumber}`]
+
+      const requestData = {
+        prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
+        payload: interactionPayload, // Usar payload de interação
+        agent: agentNumber,
+        chatMessage: message,
+        type: "chat_interaction",
+      }
 
       let previousResponse = null
       if (agentNumber > 1) {
@@ -214,13 +265,9 @@ export default function ExecutionPage() {
         }
       }
 
-      const requestData = {
-        prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
-        payload,
-        agent: agentNumber,
-        chatMessage: message,
-        type: "chat_interaction",
-        ...(previousResponse && { previousResponse }),
+      // Adicionar contexto anterior se disponível
+      if (previousResponse) {
+        requestData.previousResponse = previousResponse
       }
 
       console.log(`[v0] Enviando mensagem de chat para Agent ${agentNumber}:`, message)
@@ -237,16 +284,30 @@ export default function ExecutionPage() {
 
       if (response.ok) {
         const responseData = await response.json()
+        console.log(`[v0] Chat response from Agent ${agentNumber}:`, responseData)
 
-        const responseContent =
-          responseData.output ||
-          responseData.message?.content ||
-          (typeof responseData.message === "string" ? responseData.message : JSON.stringify(responseData))
+        let extractedContent = ""
+        if (responseData && responseData.output) {
+          extractedContent = responseData.output
+          const agentMessage = {
+            id: Date.now() + 1,
+            type: "agent",
+            content: extractedContent,
+            timestamp: new Date().toISOString(),
+          }
 
-        const safeResponseContent =
-          typeof responseContent === "string" ? responseContent : String(responseContent || "")
+          setChatMessages((prev) => ({
+            ...prev,
+            [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], agentMessage],
+          }))
 
-        if (!safeResponseContent || safeResponseContent.trim() === "" || safeResponseContent === "{}") {
+          updateAgentResponseFromChat(agentNumber, extractedContent)
+
+          toast({
+            title: "Mensagem Enviada",
+            description: `Resposta recebida do Agente ${agentNumber}`,
+          })
+        } else {
           const rateLimitMessage = {
             id: Date.now(),
             type: "system",
@@ -265,25 +326,9 @@ export default function ExecutionPage() {
             description: "Aguarde 60 segundos antes de tentar novamente",
             variant: "destructive",
           })
-        } else {
-          const agentMessage = {
-            id: Date.now() + 1,
-            type: "agent",
-            content: responseContent,
-            timestamp: new Date().toISOString(),
-          }
-
-          setChatMessages((prev) => ({
-            ...prev,
-            [`agent${agentNumber}`]: [...prev[`agent${agentNumber}`], agentMessage],
-          }))
-
-          toast({
-            title: "Mensagem Enviada",
-            description: `Resposta recebida do Agente ${agentNumber}`,
-          })
         }
       } else {
+        console.error(`[v0] Chat error from Agent ${agentNumber}:`, response.status)
         throw new Error(`HTTP ${response.status}`)
       }
     } catch (error) {
@@ -420,7 +465,9 @@ export default function ExecutionPage() {
             ? "Agente Classificador"
             : agentNumber === 2
               ? "Agente de Causas"
-              : "Agente de Investigação",
+              : agentNumber === 3
+                ? "Agente de Investigação"
+                : "Agente 4", // Added Agent 4 name
         status: response.ok ? "completed" : "error",
         timestamp: new Date().toISOString(),
         response: extractedContent,
@@ -500,6 +547,13 @@ export default function ExecutionPage() {
       setIsLoading(true)
       console.log(`[v0] Executing Agent ${agentNumber}`)
 
+      if (agentNumber === 4) {
+        console.log(`[v0] DEBUG Agent 4 - webhookURLs state:`, webhookURLs)
+        console.log(`[v0] DEBUG Agent 4 - agent4 key exists:`, "agent4" in webhookURLs)
+        console.log(`[v0] DEBUG Agent 4 - agent4 value:`, webhookURLs.agent4)
+        console.log(`[v0] DEBUG Agent 4 - typeof agent4:`, typeof webhookURLs.agent4)
+      }
+
       const payload = buildPayload(true)
       console.log(`[v0] Payload completo para Agent ${agentNumber}:`, payload)
       console.log(`[v0] Descrição com base de conhecimento:`, payload.descricao)
@@ -519,8 +573,16 @@ export default function ExecutionPage() {
           previousResponse: inputData,
           agent: agentNumber,
         }
-      } else {
+      } else if (agentNumber === 3) {
         // Terceiro agente recebe a resposta do agente anterior COM base de conhecimento
+        requestData = {
+          prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
+          payload: payload, // Usando payload já construído
+          previousResponse: inputData,
+          agent: agentNumber,
+        }
+      } else {
+        // Quarto agente recebe a resposta do agente anterior
         requestData = {
           prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
           payload: payload, // Usando payload já construído
@@ -530,6 +592,27 @@ export default function ExecutionPage() {
       }
 
       const webhookUrl = webhookURLs[`agent${agentNumber}`]
+      console.log(`[v0] Checking webhook for Agent ${agentNumber}:`, webhookUrl)
+      console.log(`[v0] Available webhooks:`, webhookURLs)
+
+      if (agentNumber === 4) {
+        console.log(`[v0] DEBUG Agent 4 - Constructed key: agent${agentNumber}`)
+        console.log(`[v0] DEBUG Agent 4 - Key lookup result:`, webhookURLs[`agent${agentNumber}`])
+        console.log(`[v0] DEBUG Agent 4 - Direct agent4 lookup:`, webhookURLs.agent4)
+        console.log(`[v0] DEBUG Agent 4 - All webhook keys:`, Object.keys(webhookURLs))
+      }
+
+      if (!webhookUrl || typeof webhookUrl !== "string" || webhookUrl.trim() === "") {
+        console.log(`[v0] ERROR Agent ${agentNumber} - Webhook validation failed:`, {
+          webhookUrl,
+          type: typeof webhookUrl,
+          isEmpty: webhookUrl === "",
+          isNull: webhookUrl === null,
+          isUndefined: webhookUrl === undefined,
+        })
+        throw new Error(`Webhook URL não encontrada para Agent ${agentNumber}`)
+      }
+
       console.log(`[v0] Sending request to Agent ${agentNumber}:`, webhookUrl)
       console.log(`[v0] Request data completo:`, JSON.stringify(requestData, null, 2)) // Log mais detalhado
 
@@ -612,7 +695,9 @@ export default function ExecutionPage() {
             ? "Agente Classificador"
             : agentNumber === 2
               ? "Agente de Causas"
-              : "Agente de Investigação",
+              : agentNumber === 3
+                ? "Agente de Investigação"
+                : "Agente 4", // Added Agent 4 name
         status: response.ok ? "completed" : "error",
         timestamp: new Date().toISOString(),
         response: extractedContent,
@@ -626,9 +711,6 @@ export default function ExecutionPage() {
       const existingResponses = JSON.parse(localStorage.getItem("rca_agent_responses") || "[]")
       const updatedResponses = [...existingResponses, monitoringResponse]
       localStorage.setItem("rca_agent_responses", JSON.stringify(updatedResponses))
-
-      // Manter formato original para compatibilidade
-      localStorage.setItem(`agent${agentNumber}_response`, JSON.stringify(agentResponse))
 
       window.dispatchEvent(new CustomEvent("agent-response", { detail: monitoringResponse }))
 
@@ -652,6 +734,8 @@ export default function ExecutionPage() {
         }))
       }
 
+      setIsLoading(false)
+
       setTimeout(() => saveProgress(), 100)
 
       return agentResponse
@@ -665,7 +749,9 @@ export default function ExecutionPage() {
             ? "Agente Classificador"
             : agentNumber === 2
               ? "Agente de Causas"
-              : "Agente de Investigação",
+              : agentNumber === 3
+                ? "Agente de Investigação"
+                : "Agente 4", // Added Agent 4 name
         status: "error" as const,
         timestamp: new Date().toISOString(),
         response: null,
@@ -688,6 +774,8 @@ export default function ExecutionPage() {
         [`agent${agentNumber}`]: "error",
       }))
 
+      setIsLoading(false)
+
       toast({
         title: `❌ Erro no Agente ${agentNumber}`,
         description: `Falha ao processar com o Agente ${agentNumber}`,
@@ -698,7 +786,41 @@ export default function ExecutionPage() {
 
       throw error
     } finally {
-      setIsLoading(false)
+      // This finally block might be redundant if setIsLoading(false) is called in both success and error paths.
+      // However, it's good practice to ensure isLoading is reset if any unexpected exit occurs.
+      // If the above setIsLoading(false) calls are sufficient, this can be removed.
+      // For now, keeping it for robustness.
+      if (isLoading) {
+        setIsLoading(false)
+      }
+    }
+  }
+
+  const executeIndividualAgent = async (agentNumber: number) => {
+    console.log(`[v0] Executing individual Agent ${agentNumber}`)
+
+    // Verificar se há resposta do agente anterior (exceto para o Agente 1)
+    let previousResponse = null
+    if (agentNumber > 1) {
+      const previousAgentKey = `agent${agentNumber - 1}`
+      const previousAgentResponse = agentResponses[previousAgentKey]
+
+      if (previousAgentResponse && previousAgentResponse.success) {
+        previousResponse = previousAgentResponse.data
+        console.log(`[v0] Using previous agent response for Agent ${agentNumber}:`, previousResponse)
+      }
+    }
+
+    setManualLoadingDialog({ open: true, agent: agentNumber })
+    setAgentStatus((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: "loading",
+    }))
+
+    try {
+      await executeAgent(agentNumber, previousResponse)
+    } catch (error) {
+      console.error(`[v0] Error executing Agent ${agentNumber}:`, error)
     }
   }
 
@@ -714,11 +836,13 @@ export default function ExecutionPage() {
       agent1: "pending",
       agent2: "pending",
       agent3: "pending",
+      agent4: "pending", // Reset status for Agent 4
     })
     setAgentResponses({
       agent1: null,
       agent2: null,
       agent3: null,
+      agent4: null, // Reset responses for Agent 4
     })
 
     try {
@@ -734,6 +858,10 @@ export default function ExecutionPage() {
       setCurrentAgent(3)
       const agent3Response = await executeAgent(3, agent2Response.data)
 
+      // Executar Agente 4 com resposta do Agente 3
+      setCurrentAgent(4)
+      const agent4Response = await executeAgent(4, agent3Response.data)
+
       const finalReport = {
         success: true,
         status: 200,
@@ -741,6 +869,7 @@ export default function ExecutionPage() {
           agent1: agent1Response.data,
           agent2: agent2Response.data,
           agent3: agent3Response.data,
+          agent4: agent4Response.data, // Include Agent 4 data
           combined: true,
           timestamp: new Date().toISOString(),
         },
@@ -748,37 +877,37 @@ export default function ExecutionPage() {
         method: "fetch",
       }
 
-      const executionId = `agent3_auto_${Date.now()}`
+      const executionId = `agent4_auto_${Date.now()}`
       const historicalExecution = {
         id: executionId,
-        agentName: "Agente de Investigação",
+        agentName: "Agente 4", // Agent 4 name
         timestamp: new Date().toISOString(),
-        response: agent3Response.data,
-        agent: 3,
+        response: agent4Response.data,
+        agent: 4,
         caseData: caseData,
         mode: "auto",
       }
 
-      // Carregar e atualizar histórico do agente 3
-      let agent3History = []
+      // Carregar e atualizar histórico do agente 4
+      let agent4History = []
       try {
-        const existingHistory = localStorage.getItem("rca_agent3_history")
+        const existingHistory = localStorage.getItem("rca_agent4_history")
         if (existingHistory) {
-          agent3History = JSON.parse(existingHistory)
+          agent4History = JSON.parse(existingHistory)
         }
       } catch (err) {
-        console.error("[v0] Error loading agent 3 history:", err)
+        console.error("[v0] Error loading agent 4 history:", err)
       }
 
-      agent3History.unshift(historicalExecution) // Adiciona no início (mais recente primeiro)
+      agent4History.unshift(historicalExecution) // Adiciona no início (mais recente primeiro)
 
       // Limitar histórico a 50 execuções para evitar crescimento excessivo
-      if (agent3History.length > 50) {
-        agent3History = agent3History.slice(0, 50)
+      if (agent4History.length > 50) {
+        agent4History = agent4History.slice(0, 50)
       }
 
-      localStorage.setItem("rca_agent3_history", JSON.stringify(agent3History))
-      console.log("[v0] Saved auto mode agent 3 execution to history:", executionId)
+      localStorage.setItem("rca_agent4_history", JSON.stringify(agent4History))
+      console.log("[v0] Saved auto mode agent 4 execution to history:", executionId)
 
       localStorage.setItem("beely_last_response", JSON.stringify(finalReport))
       localStorage.setItem("rca_response", JSON.stringify(finalReport))
@@ -790,7 +919,7 @@ export default function ExecutionPage() {
       toast({
         title: "✅ Análise completa concluída",
         description:
-          "Todos os 3 agentes processaram com sucesso! Use o botão 'Visualizar Resposta' do Agente 3 para ver o relatório.",
+          "Todos os 4 agentes processaram com sucesso! Use o botão 'Visualizar Resposta' do Agente 4 para ver o relatório.",
         duration: 5000,
       })
 
@@ -803,7 +932,7 @@ export default function ExecutionPage() {
   }
 
   const executeNextAgent = async () => {
-    if (currentAgent > 3) return
+    if (currentAgent > 4) return // Check for Agent 4
 
     try {
       let inputData = null
@@ -811,11 +940,14 @@ export default function ExecutionPage() {
         inputData = agentResponses.agent1.data
       } else if (currentAgent === 3 && agentResponses.agent2) {
         inputData = agentResponses.agent2.data
+      } else if (currentAgent === 4 && agentResponses.agent3) {
+        inputData = agentResponses.agent3.data // Pass Agent 3 response to Agent 4
       }
 
       await executeAgent(currentAgent, inputData)
 
-      if (currentAgent < 3) {
+      if (currentAgent < 4) {
+        // Check for Agent 4
         setCurrentAgent((prev) => prev + 1)
         toast({
           title: `✅ Agente ${currentAgent} concluído`,
@@ -825,7 +957,7 @@ export default function ExecutionPage() {
         // Último agente - gerar relatório final
         toast({
           title: "✅ Todos os agentes concluídos",
-          description: "Análise completa! Use o botão 'Visualizar Resposta' do Agente 3 para ver o relatório.",
+          description: "Análise completa! Use o botão 'Visualizar Resposta' do Agente 4 para ver o relatório.",
           duration: 5000,
         })
 
@@ -873,25 +1005,21 @@ export default function ExecutionPage() {
   }
 
   const openViewResponseDialog = (agentNum: number) => {
-    if (agentNum === 3) {
-      // Para Agente 3, redirecionar para aba de visualização
-      handleViewResponse(3)
-      return
-    }
-
-    // Para outros agentes, manter comportamento atual do dialog
     const agentResponse = agentResponses[`agent${agentNum}`]
     let lastResponse = ""
 
-    if (agentResponse?.data?.message?.content) {
-      lastResponse =
-        typeof agentResponse.data.message.content === "string"
-          ? agentResponse.data.message.content
-          : JSON.stringify(agentResponse.data.message.content, null, 2)
+    if (agentResponse?.data?.output) {
+      lastResponse = agentResponse.data.output
+    } else if (agentResponse?.data?.message?.content) {
+      lastResponse = agentResponse.data.message.content
+    } else if (agentResponse?.data?.html) {
+      lastResponse = agentResponse.data.html
+    } else if (agentResponse?.data) {
+      lastResponse = JSON.stringify(agentResponse.data, null, 2)
     }
 
     setViewResponseDialog({
-      open: true,
+      isOpen: true,
       agentNum,
       lastResponse,
     })
@@ -972,8 +1100,11 @@ export default function ExecutionPage() {
         console.log("[v0] Loading saved progress:", progressData)
 
         let nextAgent = 1
-        if (progressData.agentStatus?.agent3 === "completed") {
-          nextAgent = 4 // All completed
+        if (progressData.agentStatus?.agent4 === "completed") {
+          // Check for Agent 4
+          nextAgent = 5 // All completed
+        } else if (progressData.agentStatus?.agent3 === "completed") {
+          nextAgent = 4
         } else if (progressData.agentStatus?.agent2 === "completed") {
           nextAgent = 3
         } else if (progressData.agentStatus?.agent1 === "completed") {
@@ -987,18 +1118,22 @@ export default function ExecutionPage() {
         if (hasCompletedAgents) {
           console.log(`[v0] Found completed agents, setting currentAgent to ${nextAgent}`)
           setCurrentAgent(nextAgent)
-          setAgentResponses(progressData.agentResponses || { agent1: null, agent2: null, agent3: null })
-          setAgentStatus(progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: "pending" })
+          setAgentResponses(progressData.agentResponses || { agent1: null, agent2: null, agent3: null, agent4: null }) // Initialize Agent 4
+          setAgentStatus(
+            progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: "pending", agent4: "pending" },
+          ) // Initialize Agent 4
           setShowViewResponseButton(
-            progressData.showViewResponseButton || { agent1: false, agent2: false, agent3: false },
+            progressData.showViewResponseButton || { agent1: false, agent2: false, agent3: false, agent4: false }, // Initialize Agent 4
           )
         } else {
           // No completed agents, use saved state as-is
           setCurrentAgent(progressData.currentAgent || 1)
-          setAgentResponses(progressData.agentResponses || { agent1: null, agent2: null, agent3: null })
-          setAgentStatus(progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: null })
+          setAgentResponses(progressData.agentResponses || { agent1: null, agent2: null, agent3: null, agent4: null }) // Initialize Agent 4
+          setAgentStatus(
+            progressData.agentStatus || { agent1: "pending", agent2: "pending", agent3: "pending", agent4: "pending" },
+          ) // Initialize Agent 4
           setShowViewResponseButton(
-            progressData.showViewResponseButton || { agent1: false, agent2: false, agent3: false },
+            progressData.showViewResponseButton || { agent1: false, agent2: false, agent3: false, agent4: false }, // Initialize Agent 4
           )
         }
 
@@ -1019,6 +1154,7 @@ export default function ExecutionPage() {
             agent1: "https://n8n.grupobeely.com.br/webhook/d620f8b0-a685-4eb7-a9db-367431e11b8e",
             agent2: "https://n8n.grupobeely.com.br/webhook/segundo",
             agent3: "https://n8n.grupobeely.com.br/webhook/terceiro",
+            agent4: "https://n8n.grupobeely.com.br/webhook/quarto", // Initialize Agent 4 URL
           },
         )
         setSelectedKnowledgeBase(progressData.selectedKnowledgeBase || [])
@@ -1026,7 +1162,7 @@ export default function ExecutionPage() {
         toast({
           title: "📋 Progresso restaurado",
           description: hasCompletedAgents
-            ? `Pronto para executar Agente ${nextAgent > 3 ? "- Todos concluídos" : nextAgent}`
+            ? `Pronto para executar Agente ${nextAgent > 4 ? "- Todos concluídos" : nextAgent}` // Check for Agent 4
             : "Seu progresso anterior foi carregado automaticamente.",
           duration: 3000,
         })
@@ -1052,13 +1188,14 @@ export default function ExecutionPage() {
 
   const resetExecution = () => {
     setCurrentAgent(1)
-    setAgentResponses({ agent1: null, agent2: null, agent3: null })
-    setAgentStatus({ agent1: "pending", agent2: "pending", agent3: "pending" })
-    setShowViewResponseButton({ agent1: false, agent2: false, agent3: false })
+    setAgentResponses({ agent1: null, agent2: null, agent3: null, agent4: null }) // Reset Agent 4
+    setAgentStatus({ agent1: "pending", agent2: "pending", agent3: "pending", agent4: "pending" }) // Reset Agent 4
+    setShowViewResponseButton({ agent1: false, agent2: false, agent3: false, agent4: false }) // Reset Agent 4
     setSelectedKnowledgeBase([])
     localStorage.removeItem("agent1_response")
     localStorage.removeItem("agent2_response")
     localStorage.removeItem("agent3_response")
+    localStorage.removeItem("agent4_response") // Remove Agent 4 response
     localStorage.removeItem("rca_execution_progress")
 
     toast({
@@ -1069,9 +1206,9 @@ export default function ExecutionPage() {
 
   const clearProgress = () => {
     setCurrentAgent(1)
-    setAgentResponses({ agent1: null, agent2: null, agent3: null })
-    setAgentStatus({ agent1: "pending", agent2: "pending", agent3: "pending" })
-    setShowViewResponseButton({ agent1: false, agent2: false, agent3: false })
+    setAgentResponses({ agent1: null, agent2: null, agent3: null, agent4: null }) // Clear Agent 4
+    setAgentStatus({ agent1: "pending", agent2: "pending", agent3: "pending", agent4: "pending" }) // Clear Agent 4
+    setShowViewResponseButton({ agent1: false, agent2: false, agent3: false, agent4: false }) // Clear Agent 4
     localStorage.removeItem("rca_execution_progress")
 
     toast({
@@ -1083,7 +1220,52 @@ export default function ExecutionPage() {
   const handleViewResponse = (agentNumber: number) => {
     console.log(`[v0] Viewing response for agent ${agentNumber}`)
 
-    if (agentNumber === 3) {
+    if (agentNumber === 4) {
+      // Handle Agent 4
+      const agent4Response = agentResponses.agent4
+      if (agent4Response) {
+        // Salvar no histórico de execuções do agente 4
+        const executionId = `agent4_${Date.now()}`
+        const historicalExecution = {
+          id: executionId,
+          agentName: "Agente 4", // Agent 4 name
+          timestamp: new Date().toISOString(),
+          response: agent4Response.data,
+          agent: 4,
+          caseData: caseData,
+        }
+
+        // Carregar histórico existente
+        let agent4History = []
+        try {
+          const existingHistory = localStorage.getItem("rca_agent4_history")
+          if (existingHistory) {
+            agent4History = JSON.parse(existingHistory)
+          }
+        } catch (err) {
+          console.error("[v0] Error loading agent 4 history:", err)
+        }
+
+        // Adicionar nova execução ao histórico
+        agent4History.unshift(historicalExecution) // Adiciona no início (mais recente primeiro)
+
+        // Limitar histórico a 50 execuções para evitar crescimento excessivo
+        if (agent4History.length > 50) {
+          agent4History = agent4History.slice(0, 50)
+        }
+
+        // Salvar histórico atualizado
+        localStorage.setItem("rca_agent4_history", JSON.stringify(agent4History))
+        console.log("[v0] Saved agent 4 execution to history:", executionId)
+
+        // Manter compatibilidade com sistema atual
+        localStorage.setItem("rca_response", JSON.stringify(agent4Response))
+        localStorage.setItem("latest_analysis", JSON.stringify(agent4Response))
+
+        router.push("/dashboard/output")
+      }
+    } else if (agentNumber === 3) {
+      // Para Agente 3, redirecionar para aba de visualização
       const agent3Response = agentResponses.agent3
       if (agent3Response) {
         // Salvar no histórico de execuções do agente 3
@@ -1156,11 +1338,87 @@ export default function ExecutionPage() {
     hasLoadedProgress,
   ])
 
+  // Helper functions for status badges
+  const getStatusVariant = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "default"
+      case "processing":
+        return "secondary"
+      case "error":
+        return "destructive"
+      default:
+        return "outline"
+    }
+  }
+
+  const getStatusText = (status: string) => {
+    switch (status) {
+      case "completed":
+        return "Concluído"
+      case "processing":
+        return "Processando"
+      case "error":
+        return "Erro"
+      default:
+        return "Pendente"
+    }
+  }
+
+  // Function to open the continuous interaction dialog
+  const openContinuousInteractionDialog = (agentNumber: number) => {
+    // This function would typically open a dialog to configure continuous interaction
+    // For now, we'll just log it and call startContinuousInteraction directly
+    console.log(`Opening continuous interaction dialog for Agent ${agentNumber}`)
+    startContinuousInteraction(agentNumber)
+  }
+
+  const sendContinuousInteraction = async (agentNumber: number) => {
+    const inputKey = `chatInput${agentNumber}`
+    const message = chatInputs[inputKey]?.trim()
+
+    if (!message) {
+      toast({
+        title: "Mensagem vazia",
+        description: "Digite uma mensagem antes de enviar",
+        variant: "destructive",
+      })
+      return
+    }
+
+    console.log(`[v0] Sending continuous interaction to Agent ${agentNumber} with custom message:`, message)
+
+    setManualLoadingDialog({ open: true, agent: agentNumber })
+    setAgentStatus((prev) => ({
+      ...prev,
+      [`agent${agentNumber}`]: "loading",
+    }))
+
+    // Para interação contínua, usar a mensagem personalizada do usuário
+    const customInput = {
+      message: message,
+      isCustomInteraction: true,
+    }
+
+    try {
+      await executeAgent(agentNumber, customInput)
+
+      // Limpar input após envio bem-sucedido
+      setChatInputs((prev) => ({
+        ...prev,
+        [inputKey]: "",
+      }))
+    } catch (error) {
+      console.error(`[v0] Error in continuous interaction for Agent ${agentNumber}:`, error)
+    }
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       <div>
         <h1 className="text-2xl font-bold">Análise de Falhas</h1>
-        <p className="text-muted-foreground">Sistema de análise com 3 agentes especializados</p>
+        <p className="text-muted-foreground">Sistema de análise com 4 agentes especializados</p>{" "}
+        {/* Updated agent count */}
       </div>
 
       <Dialog open={showLoadingDialog} onOpenChange={() => {}}>
@@ -1175,62 +1433,69 @@ export default function ExecutionPage() {
             <div className="w-full space-y-4">
               <div className="flex justify-between text-sm">
                 <span>Progresso</span>
-                <span>Agente {currentAgent}/3</span>
+                <span>Agente {currentAgent}/4</span> {/* Updated agent count */}
               </div>
-              <Progress value={(currentAgent / 3) * 100} className="w-full" />
+              <Progress value={(currentAgent / 4) * 100} className="w-full" /> {/* Updated agent count */}
             </div>
 
             <div className="space-y-3 w-full">
-              {[1, 2, 3].map((agentNum) => (
-                <div
-                  key={agentNum}
-                  className={`flex items-center gap-3 p-2 rounded ${
-                    agentStatus[`agent${agentNum}`] === "completed"
-                      ? "bg-green-50 text-green-700"
-                      : agentStatus[`agent${agentNum}`] === "processing"
-                        ? "bg-blue-50 text-blue-700"
-                        : agentStatus[`agent${agentNum}`] === "error"
-                          ? "bg-red-50 text-red-700"
-                          : "text-muted-foreground"
-                  }`}
-                >
-                  {agentStatus[`agent${agentNum}`] === "completed" ? (
-                    <CheckCircle className="h-4 w-4" />
-                  ) : agentStatus[`agent${agentNum}`] === "processing" ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <div className="h-4 w-4 border-2 border-muted rounded-full" />
-                  )}
-                  <span className="text-sm">
-                    Agente {agentNum}:{" "}
-                    {agentNum === 1
-                      ? "Classificação da Falha"
-                      : agentNum === 2
-                        ? "Análise de Causas"
-                        : "Plano de Investigação"}
-                  </span>
-                  <Badge
-                    variant={
+              {[1, 2, 3, 4].map(
+                (
+                  agentNum, // Added Agent 4
+                ) => (
+                  <div
+                    key={agentNum}
+                    className={`flex items-center gap-3 p-2 rounded ${
                       agentStatus[`agent${agentNum}`] === "completed"
-                        ? "default"
+                        ? "bg-green-50 text-green-700"
                         : agentStatus[`agent${agentNum}`] === "processing"
-                          ? "secondary"
+                          ? "bg-blue-50 text-blue-700"
                           : agentStatus[`agent${agentNum}`] === "error"
-                            ? "destructive"
-                            : "outline"
-                    }
-                    className="ml-auto text-xs"
+                            ? "bg-red-50 text-red-700"
+                            : "text-muted-foreground"
+                    }`}
                   >
-                    {agentStatus[`agent${agentNum}`] === "completed"
-                      ? "Concluído"
-                      : agentStatus[`agent${agentNum}`] === "processing"
-                        ? "Processando"
-                        : agentStatus[`agent${agentNum}`] === "error"
-                          ? "Erro"
-                          : "Aguardando"}
-                  </Badge>
-                </div>
-              ))}
+                    {agentStatus[`agent${agentNum}`] === "completed" ? (
+                      <CheckCircle className="h-4 w-4" />
+                    ) : agentStatus[`agent${agentNum}`] === "processing" ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      <div className="h-4 w-4 border-2 border-muted rounded-full" />
+                    )}
+                    <span className="text-sm">
+                      Agente {agentNum}:{" "}
+                      {agentNum === 1
+                        ? "Classificação da Falha"
+                        : agentNum === 2
+                          ? "Análise de Causas"
+                          : agentNum === 3
+                            ? "Plano de Investigação"
+                            : "5 Porquês"}{" "}
+                      {/* Added Agent 4 description */}
+                    </span>
+                    <Badge
+                      variant={
+                        agentStatus[`agent${agentNum}`] === "completed"
+                          ? "default"
+                          : agentStatus[`agent${agentNum}`] === "processing"
+                            ? "secondary"
+                            : agentStatus[`agent${agentNum}`] === "error"
+                              ? "destructive"
+                              : "outline"
+                      }
+                      className="ml-auto text-xs"
+                    >
+                      {agentStatus[`agent${agentNum}`] === "completed"
+                        ? "Concluído"
+                        : agentStatus[`agent${agentNum}`] === "processing"
+                          ? "Processando"
+                          : agentStatus[`agent${agentNum}`] === "error"
+                            ? "Erro"
+                            : "Aguardando"}
+                    </Badge>
+                  </div>
+                ),
+              )}
             </div>
 
             <div className="text-center space-y-2">
@@ -1238,6 +1503,7 @@ export default function ExecutionPage() {
                 {currentAgent === 1 && "Classificando tipo de falha..."}
                 {currentAgent === 2 && "Analisando causas prováveis..."}
                 {currentAgent === 3 && "Gerando plano de investigação..."}
+                {currentAgent === 4 && "Aplicando a técnica dos 5 Porquês..."} {/* Added Agent 4 message */}
               </div>
               <div className="text-xs text-muted-foreground">
                 Executando agentes sequencialmente com base nas respostas anteriores.
@@ -1253,8 +1519,16 @@ export default function ExecutionPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={manualLoadingDialog.open} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" hideCloseButton>
+      {/* Permitir fechar dialog manual clicando no X */}
+      <Dialog
+        open={manualLoadingDialog.open}
+        onOpenChange={(open) => {
+          if (!open) {
+            setManualLoadingDialog({ open: false, agent: manualLoadingDialog.agent })
+          }
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
           <DialogHeader className="text-center">
             <DialogTitle className="flex items-center justify-center gap-3">
               <Loader2 className="h-6 w-6 animate-spin text-primary" />
@@ -1267,6 +1541,8 @@ export default function ExecutionPage() {
                 {manualLoadingDialog.agent === 1 && "Classificando tipo de falha..."}
                 {manualLoadingDialog.agent === 2 && "Analisando causas prováveis..."}
                 {manualLoadingDialog.agent === 3 && "Gerando plano de investigação..."}
+                {manualLoadingDialog.agent === 4 && "Aplicando a técnica dos 5 Porquês..."}{" "}
+                {/* Added Agent 4 message */}
               </div>
               <div className="text-xs text-muted-foreground">
                 Por favor, aguarde enquanto o agente processa os dados.
@@ -1283,9 +1559,9 @@ export default function ExecutionPage() {
       </Dialog>
 
       <Dialog
-        open={viewResponseDialog.open}
+        open={viewResponseDialog.isOpen} // Changed from 'open' to 'isOpen'
         onOpenChange={(open) => {
-          setViewResponseDialog((prev) => ({ ...prev, open }))
+          setViewResponseDialog((prev) => ({ ...prev, isOpen: open })) // Changed from 'open' to 'isOpen'
           if (!open) setHideLastResponse(false)
         }}
       >
@@ -1376,9 +1652,10 @@ export default function ExecutionPage() {
               <div className="mt-4 space-y-3">
                 <Textarea
                   placeholder={`Digite sua mensagem para o Agente ${viewResponseDialog.agentNum}...`}
-                  value={chatInput[`agent${viewResponseDialog.agentNum}`] || ""}
+                  value={viewResponseDialog.agentNum ? chatInputs[`agent${viewResponseDialog.agentNum}`] || "" : ""}
                   onChange={(e) =>
-                    setChatInput((prev) => ({
+                    viewResponseDialog.agentNum &&
+                    setChatInputs((prev) => ({
                       ...prev,
                       [`agent${viewResponseDialog.agentNum}`]: e.target.value,
                     }))
@@ -1388,12 +1665,13 @@ export default function ExecutionPage() {
                 <Button
                   onClick={() => sendChatMessage(viewResponseDialog.agentNum!)}
                   disabled={
+                    !viewResponseDialog.agentNum ||
                     isSendingMessage[`agent${viewResponseDialog.agentNum}`] ||
-                    !(chatInput[`agent${viewResponseDialog.agentNum}`] || "").trim()
+                    !(viewResponseDialog.agentNum ? chatInputs[`agent${viewResponseDialog.agentNum}`] || "" : "").trim()
                   }
                   className="w-full"
                 >
-                  {isSendingMessage[`agent${viewResponseDialog.agentNum}`] ? (
+                  {viewResponseDialog.agentNum && isSendingMessage[`agent${viewResponseDialog.agentNum}`] ? (
                     <>
                       <Loader2 className="w-4 h-4 mr-2 animate-spin" />
                       Enviando...
@@ -1415,29 +1693,36 @@ export default function ExecutionPage() {
         <Card>
           <CardHeader>
             <CardTitle>Configuração dos Agentes</CardTitle>
-            <CardDescription>URLs dos 3 agentes especializados</CardDescription>
+            <CardDescription>URLs dos 4 agentes especializados</CardDescription> {/* Updated agent count */}
           </CardHeader>
           <CardContent className="space-y-4">
-            {[1, 2, 3].map((agentNum) => (
-              <div key={agentNum} className="space-y-2">
-                <Label htmlFor={`webhook-agent${agentNum}`}>
-                  Agente {agentNum}:{" "}
-                  {agentNum === 1
-                    ? "Classificação da Falha"
-                    : agentNum === 2
-                      ? "Análise de Causas"
-                      : "Plano de Investigação"}
-                </Label>
-                <Input
-                  id={`webhook-agent${agentNum}`}
-                  type="url"
-                  value={webhookURLs[`agent${agentNum}`]}
-                  onChange={(e) => handleWebhookURLChange(`agent${agentNum}`, e.target.value)}
-                  placeholder={`https://n8n.grupobeely.com.br/webhook/${agentNum === 1 ? "d620f8b0-a685-4eb7-a9db-367431e11b8e" : agentNum === 2 ? "segundo" : "terceiro"}`}
-                  className="font-mono text-sm border border-border"
-                />
-              </div>
-            ))}
+            {[1, 2, 3, 4].map(
+              (
+                agentNum, // Added Agent 4
+              ) => (
+                <div key={agentNum} className="space-y-2">
+                  <Label htmlFor={`webhook-agent${agentNum}`}>
+                    Agente {agentNum}:{" "}
+                    {agentNum === 1
+                      ? "Classificação da Falha"
+                      : agentNum === 2
+                        ? "Análise de Causas"
+                        : agentNum === 3
+                          ? "Plano de Investigação"
+                          : "5 Porquês"}{" "}
+                    {/* Added Agent 4 description */}
+                  </Label>
+                  <Input
+                    id={`webhook-agent${agentNum}`}
+                    type="url"
+                    value={webhookURLs[`agent${agentNum}`]}
+                    onChange={(e) => handleWebhookURLChange(`agent${agentNum}`, e.target.value)}
+                    placeholder={`https://n8n.grupobeely.com.br/webhook/${agentNum === 1 ? "d620f8b0-a685-4eb7-a9db-367431e11b8e" : agentNum === 2 ? "segundo" : agentNum === 3 ? "terceiro" : "quarto"}`} // Atualizando placeholder do Agent 4
+                    className="font-mono text-sm border border-border"
+                  />
+                </div>
+              ),
+            )}
           </CardContent>
         </Card>
 
@@ -1589,7 +1874,7 @@ export default function ExecutionPage() {
                 Base de Conhecimento
               </CardTitle>
               <CardDescription>
-                Selecione os documentos que serão enviados para o Agente 3 (Investigação)
+                Selecione os documentos que serão enviados para o Agente 4 (5 Porquês) {/* Updated agent */}
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -1672,145 +1957,316 @@ export default function ExecutionPage() {
             </div>
 
             {/* Status dos agentes */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[1, 2, 3].map((agentNum) => (
-                <div key={agentNum} className="p-3 border rounded-lg">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="font-medium text-sm">Agente {agentNum}</span>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Agente 1 */}
+              <Card className="relative border-blue-200 bg-blue-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center">
+                        <span className="text-lg font-bold text-blue-700">1</span>
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-blue-700">Agente 1</CardTitle>
+                        <p className="text-sm text-blue-600">Classificação</p>
+                      </div>
+                    </div>
                     <Badge
                       variant={
-                        agentStatus[`agent${agentNum}`] === "completed"
+                        agentStatus.agent1 === "completed"
                           ? "default"
-                          : agentStatus[`agent${agentNum}`] === "processing"
+                          : agentStatus.agent1 === "processing"
                             ? "secondary"
-                            : agentStatus[`agent${agentNum}`] === "error"
+                            : agentStatus.agent1 === "error"
                               ? "destructive"
                               : "outline"
                       }
                     >
-                      {agentStatus[`agent${agentNum}`] === "completed"
+                      {agentStatus.agent1 === "completed"
                         ? "Concluído"
-                        : agentStatus[`agent${agentNum}`] === "processing"
+                        : agentStatus.agent1 === "processing"
                           ? "Processando"
-                          : agentStatus[`agent${agentNum}`] === "error"
+                          : agentStatus.agent1 === "error"
                             ? "Erro"
-                            : "Aguardando"}
+                            : "Pendente"}
                     </Badge>
                   </div>
-                  <p className="text-xs text-muted-foreground mb-3">
-                    {agentNum === 1 ? "Classificação" : agentNum === 2 ? "Análise de Causas" : "Plano de Investigação"}
-                  </p>
-
-                  {agentResponses[`agent${agentNum}`] && (
-                    <div className="mb-3 space-y-2">
-                      <div className="text-xs font-medium">Chat com Agente {agentNum}</div>
-
-                      {/* Mensagens do chat */}
-                      {chatMessages[`agent${agentNum}`].length > 0 && (
-                        <div className="max-h-32 overflow-y-auto space-y-1 bg-muted/50 p-2 rounded text-xs">
-                          {chatMessages[`agent${agentNum}`].map((msg) => (
-                            <div key={msg.id} className={`${msg.type === "user" ? "text-right" : "text-left"}`}>
-                              <div
-                                className={`max-w-[80%] p-2 rounded-lg text-sm ${
-                                  msg.type === "user"
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-secondary text-secondary-foreground"
-                                }`}
-                              >
-                                <div className="break-words">
-                                  {(() => {
-                                    const messageContent =
-                                      typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-                                    return expandedMessages[msg.id] || messageContent.length <= 100
-                                      ? messageContent
-                                      : messageContent.substring(0, 100) + "..."
-                                  })()}
-                                </div>
-                                {(() => {
-                                  const messageContent =
-                                    typeof msg.content === "string" ? msg.content : JSON.stringify(msg.content)
-                                  return (
-                                    messageContent.length > 100 && (
-                                      <button
-                                        onClick={() =>
-                                          setExpandedMessages((prev) => ({
-                                            ...prev,
-                                            [msg.id]: !prev[msg.id],
-                                          }))
-                                        }
-                                        className="text-xs underline mt-1 opacity-70 hover:opacity-100"
-                                      >
-                                        {expandedMessages[msg.id] ? "Ver menos" : "Ver mais"}
-                                      </button>
-                                    )
-                                  )
-                                })()}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      )}
-
-                      {/* Input do chat */}
-                      <div className="flex gap-1 flex-col">
-                        <Textarea
-                          placeholder={`Digite sua mensagem para o Agente ${agentNum}...`}
-                          value={chatInput[`agent${agentNum}`]}
-                          onChange={(e) =>
-                            setChatInput((prev) => ({
-                              ...prev,
-                              [`agent${agentNum}`]: e.target.value,
-                            }))
-                          }
-                          className="min-h-[80px] resize-none"
-                        />
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {agentResponses.agent1 && (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-1">Resposta:</p>
+                        <p className="text-xs text-muted-foreground line-clamp-3">
+                          {agentResponses.agent1.data?.output ||
+                            agentResponses.agent1.data?.message?.content ||
+                            JSON.stringify(agentResponses.agent1.data, null, 2)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
                         <Button
-                          onClick={() => sendChatMessage(agentNum)}
-                          disabled={
-                            isSendingMessage[`agent${agentNum}`] || !(chatInput[`agent${agentNum}`] || "").trim()
-                          }
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openViewResponseDialog(1)}
                           className="w-full"
                         >
-                          {isSendingMessage[`agent${agentNum}`] ? (
-                            <Loader2 className="w-3 h-3 animate-spin" />
-                          ) : (
-                            <Send className="w-3 h-3" />
-                          )}
+                          <Eye className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </Button>
+                        <Button
+                          onClick={() => executeIndividualAgent(1)}
+                          disabled={isLoading}
+                          className="w-full"
+                          variant="outline"
+                        >
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          Executar Novamente
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startContinuousInteraction(1)}
+                          disabled={continuousInteraction.agent1}
+                          className="w-full"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          {continuousInteraction.agent1 ? "Interagindo..." : "Interação Contínua"}
                         </Button>
                       </div>
                     </div>
                   )}
+                </CardContent>
+              </Card>
 
-                  {showViewResponseButton[`agent${agentNum}`] && (
-                    <div className="flex flex-col gap-2">
-                      <Button
-                        onClick={() => openViewResponseDialog(agentNum)}
-                        variant="outline"
-                        size="sm"
-                        className="w-full"
-                      >
-                        <Eye className="w-4 h-4 mr-2" />
-                        Visualizar Resposta
-                      </Button>
-                      <Button
-                        onClick={() => startContinuousInteraction(agentNum)}
-                        variant="secondary"
-                        size="sm"
-                        className="w-full"
-                      >
-                        <MessageCircle className="w-4 h-4 mr-2" />
-                        Continuar Interação
-                      </Button>
+              {/* Agente 2 */}
+              <Card className="relative border-green-200 bg-green-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
+                        <span className="text-lg font-bold text-green-700">2</span>
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-green-700">Agente 2</CardTitle>
+                        <p className="text-sm text-green-600">Causas</p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        agentStatus.agent2 === "completed"
+                          ? "default"
+                          : agentStatus.agent2 === "processing"
+                            ? "secondary"
+                            : agentStatus.agent2 === "error"
+                              ? "destructive"
+                              : "outline"
+                      }
+                    >
+                      {agentStatus.agent2 === "completed"
+                        ? "Concluído"
+                        : agentStatus.agent2 === "processing"
+                          ? "Processando"
+                          : agentStatus.agent2 === "error"
+                            ? "Erro"
+                            : "Pendente"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {agentResponses.agent2 && (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-1">Resposta:</p>
+                        <p className="text-xs text-muted-foreground line-clamp-3">
+                          {agentResponses.agent2.data?.output ||
+                            agentResponses.agent2.data?.message?.content ||
+                            JSON.stringify(agentResponses.agent2.data, null, 2)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openViewResponseDialog(2)}
+                          className="w-full"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </Button>
+                        <Button
+                          onClick={() => executeIndividualAgent(2)}
+                          disabled={isLoading}
+                          className="w-full"
+                          variant="outline"
+                        >
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          Executar Novamente
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startContinuousInteraction(2)}
+                          disabled={continuousInteraction.agent2}
+                          className="w-full"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          {continuousInteraction.agent2 ? "Interagindo..." : "Interação Contínua"}
+                        </Button>
+                      </div>
                     </div>
                   )}
-                </div>
-              ))}
+                </CardContent>
+              </Card>
+
+              {/* Agente 3 */}
+              <Card className="relative border-orange-200 bg-orange-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-orange-100 flex items-center justify-center">
+                        <span className="text-lg font-bold text-orange-700">3</span>
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-orange-700">Agente 3</CardTitle>
+                        <p className="text-sm text-orange-600">Investigação</p>
+                      </div>
+                    </div>
+                    <Badge
+                      variant={
+                        agentStatus.agent3 === "completed"
+                          ? "default"
+                          : agentStatus.agent3 === "processing"
+                            ? "secondary"
+                            : agentStatus.agent3 === "error"
+                              ? "destructive"
+                              : "outline"
+                      }
+                    >
+                      {agentStatus.agent3 === "completed"
+                        ? "Concluído"
+                        : agentStatus.agent3 === "processing"
+                          ? "Processando"
+                          : agentStatus.agent3 === "error"
+                            ? "Erro"
+                            : "Pendente"}
+                    </Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {agentResponses.agent3 && (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-1">Resposta:</p>
+                        <p className="text-xs text-muted-foreground line-clamp-3">
+                          {agentResponses.agent3.data?.output ||
+                            agentResponses.agent3.data?.message?.content ||
+                            JSON.stringify(agentResponses.agent3.data, null, 2)}
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openViewResponseDialog(3)}
+                          className="w-full"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </Button>
+                        <Button
+                          onClick={() => executeIndividualAgent(3)}
+                          disabled={isLoading}
+                          className="w-full"
+                          variant="outline"
+                        >
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          Executar Novamente
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startContinuousInteraction(3)}
+                          disabled={continuousInteraction.agent3}
+                          className="w-full"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          {continuousInteraction.agent3 ? "Interagindo..." : "Interação Contínua"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+
+              {/* Agente 4 */}
+              <Card className="relative border-purple-200 bg-purple-50/30">
+                <CardHeader className="pb-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-full bg-purple-100 flex items-center justify-center">
+                        <span className="text-lg font-bold text-purple-700">4</span>
+                      </div>
+                      <div>
+                        <CardTitle className="text-lg text-purple-700">Agente 4</CardTitle>
+                        <p className="text-sm text-purple-600">5 Porquês</p>
+                      </div>
+                    </div>
+                    <Badge variant={getStatusVariant(agentStatus.agent4)}>{getStatusText(agentStatus.agent4)}</Badge>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {agentResponses.agent4 && (
+                    <div className="space-y-3">
+                      <div className="p-3 bg-muted rounded-lg border">
+                        <p className="text-sm font-medium mb-1">Resposta:</p>
+                        <div className="text-xs text-muted-foreground line-clamp-3">
+                          {typeof agentResponses.agent4.data === "string"
+                            ? agentResponses.agent4.data
+                            : agentResponses.agent4.data?.output ||
+                              agentResponses.agent4.data?.message?.content ||
+                              JSON.stringify(agentResponses.agent4.data, null, 2)}
+                        </div>
+                      </div>
+                      <div className="flex flex-col gap-2">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => openViewResponseDialog(4)}
+                          className="w-full"
+                        >
+                          <Eye className="w-4 h-4 mr-2" />
+                          Visualizar
+                        </Button>
+                        <Button
+                          onClick={() => executeIndividualAgent(4)}
+                          disabled={isLoading}
+                          className="w-full"
+                          variant="outline"
+                        >
+                          <RotateCcw className="w-4 h-4 mr-2" />
+                          Executar Novamente
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => startContinuousInteraction(4)}
+                          disabled={continuousInteraction.agent4}
+                          className="w-full"
+                        >
+                          <MessageCircle className="w-4 h-4 mr-2" />
+                          {continuousInteraction.agent4 ? "Interagindo..." : "Interação Contínua"}
+                        </Button>
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
             </div>
 
             {/* Botões de execução */}
             <div className="space-y-4">
               {executionMode === "auto" ? (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   <Button
                     onClick={executeAllAgents}
                     disabled={isLoading || !caseData.descricao.trim()}
@@ -1821,34 +2277,32 @@ export default function ExecutionPage() {
                     {isLoading ? "Executando Sequencialmente..." : "🚀 Executar Todos os Agentes"}
                   </Button>
                   <p className="text-xs text-muted-foreground text-center">
-                    Executa os 3 agentes automaticamente em sequência
+                    Executa os 4 agentes automaticamente em sequência
                   </p>
                 </div>
               ) : (
-                <div className="space-y-2">
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={executeNextAgent}
-                      disabled={isLoading || !caseData.descricao.trim() || currentAgent > 3}
-                      className="flex-1"
-                      size="lg"
-                    >
-                      {isLoading ? (
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                      ) : (
-                        <Send className="h-4 w-4 mr-2" />
-                      )}
-                      Executar Agente {currentAgent}
-                    </Button>
+                <div className="space-y-3">
+                  <Button
+                    onClick={executeNextAgent}
+                    disabled={isLoading || !caseData.descricao.trim() || currentAgent > 4}
+                    className="w-full"
+                    size="lg"
+                  >
+                    {isLoading ? <Loader2 className="h-4 w-4 mr-2 animate-spin" /> : <Send className="h-4 w-4 mr-2" />}
+                    Executar Agente {currentAgent}
+                  </Button>
+                  <div className="grid grid-cols-2 gap-2">
                     <Button variant="outline" onClick={clearProgress} disabled={isLoading} size="sm">
+                      <RotateCcw className="w-4 h-4 mr-1" />
                       Limpar Progresso
                     </Button>
                     <Button variant="outline" onClick={resetExecution} disabled={isLoading} size="sm">
+                      <RefreshCw className="w-4 h-4 mr-1" />
                       Reset Completo
                     </Button>
                   </div>
                   <p className="text-xs text-muted-foreground text-center">
-                    Execute um agente por vez para controle manual
+                    Execute um agente por vez para análise detalhada de cada etapa
                   </p>
                 </div>
               )}
@@ -1856,8 +2310,8 @@ export default function ExecutionPage() {
 
             <Alert>
               <AlertDescription>
-                🤖 <strong>Modo Automático:</strong> Executa os 3 agentes sequencialmente. Cada agente usa a resposta do
-                anterior.
+                🤖 <strong>Modo Automático:</strong> Executa os 4 agentes sequencialmente. Cada agente usa a resposta do
+                anterior. {/* Updated agent count */}
                 <br />
                 ⏸️ <strong>Modo Manual:</strong> Permite executar um agente por vez para análise detalhada de cada etapa.
                 <br />💾 <strong>Progresso Salvo:</strong> Seu progresso é salvo automaticamente e restaurado ao voltar

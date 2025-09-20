@@ -19,11 +19,13 @@ export default function PromptsPage() {
     a1: 0,
     a2: 0,
     a3: 0,
+    a4: 0,
   })
   const [savingStates, setSavingStates] = useState({
     a1: false,
     a2: false,
     a3: false,
+    a4: false,
   })
 
   useEffect(() => {
@@ -33,6 +35,7 @@ export default function PromptsPage() {
       a1: loaded.a1.length,
       a2: loaded.a2.length,
       a3: loaded.a3.length,
+      a4: loaded.a4?.length || 0,
     })
   }, [])
 
@@ -72,6 +75,7 @@ export default function PromptsPage() {
       a1: DEFAULT_PROMPTS.a1.length,
       a2: DEFAULT_PROMPTS.a2.length,
       a3: DEFAULT_PROMPTS.a3.length,
+      a4: DEFAULT_PROMPTS.a4.length,
     })
     prompts.reset()
     toast({
@@ -127,6 +131,7 @@ export default function PromptsPage() {
             a1: imported.a1.length,
             a2: imported.a2.length,
             a3: imported.a3.length,
+            a4: imported.a4?.length || 0,
           })
           toast({
             title: "✅ Importado",
@@ -158,16 +163,23 @@ export default function PromptsPage() {
     {
       key: "a2" as const,
       title: "Agente de Causas",
-      description: "Identifica e gera causas prováveis em formato estruturado",
+      description: "Identifica e gera causas prováveis em formato texto",
       icon: <FileText className="h-5 w-5" />,
       color: "bg-green-500",
     },
     {
       key: "a3" as const,
       title: "Agente de Investigação",
-      description: "Desenvolve plano de investigação e análise dos 5 Porquês",
+      description: "Desenvolve plano de investigação em formato texto",
       icon: <Search className="h-5 w-5" />,
       color: "bg-purple-500",
+    },
+    {
+      key: "a4" as const,
+      title: "Agente dos 5 Porquês",
+      description: "Aplica metodologia dos 5 Porquês para análise de causa raiz",
+      icon: <Search className="h-5 w-5" />,
+      color: "bg-orange-500",
     },
   ]
 
@@ -250,8 +262,10 @@ export default function PromptsPage() {
                 />
               </div>
               <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-muted-foreground bg-muted/30 rounded-lg p-3">
-                <span>Linhas: {promptData[config.key].split("\n").length}</span>
-                <span>Palavras: {promptData[config.key].split(/\s+/).filter((word) => word.length > 0).length}</span>
+                <span>Linhas: {(promptData[config.key] || "").split("\n").length}</span>
+                <span>
+                  Palavras: {(promptData[config.key] || "").split(/\s+/).filter((word) => word.length > 0).length}
+                </span>
                 <span>Caracteres: {charCounts[config.key]}</span>
               </div>
               <Button
