@@ -583,11 +583,44 @@ export default function ExecutionPage() {
       })
 
       if (response.ok) {
-        const reportHtml = await response.text()
+        const responseText = await response.text()
 
-        console.log("[v0] Report HTML received:", reportHtml)
-        console.log("[v0] Report HTML type:", typeof reportHtml)
-        console.log("[v0] Report HTML length:", reportHtml.length)
+        console.log("[v0] Raw response received:", responseText)
+        console.log("[v0] Response type:", typeof responseText)
+        console.log("[v0] Response length:", responseText.length)
+
+        let reportHtml = responseText
+
+        try {
+          // Tentar parsear como JSON primeiro
+          const jsonResponse = JSON.parse(responseText)
+          console.log("[v0] Parsed JSON response:", jsonResponse)
+
+          // Extrair HTML do JSON se existir
+          if (jsonResponse.message && jsonResponse.message.content) {
+            reportHtml = jsonResponse.message.content
+          } else if (jsonResponse.content) {
+            reportHtml = jsonResponse.content
+          } else if (typeof jsonResponse === "string") {
+            reportHtml = jsonResponse
+          }
+
+          console.log("[v0] Extracted HTML before unescape:", reportHtml.substring(0, 200) + "...")
+
+          // Fazer unescape dos caracteres escapados
+          reportHtml = reportHtml
+            .replace(/\\n/g, "\n")
+            .replace(/\\"/g, '"')
+            .replace(/\\'/g, "'")
+            .replace(/\\\\/g, "\\")
+            .replace(/\\t/g, "\t")
+            .replace(/\\r/g, "\r")
+
+          console.log("[v0] Final HTML after unescape:", reportHtml.substring(0, 200) + "...")
+        } catch (parseError) {
+          console.log("[v0] Response is not JSON, using as plain text")
+          // Se não for JSON, usar como está
+        }
 
         const reportData = {
           html: reportHtml,
@@ -597,26 +630,6 @@ export default function ExecutionPage() {
         }
 
         localStorage.setItem("rca_report_data", JSON.stringify(reportData))
-
-        const outputData = {
-          id: `execution_agent3_latest`,
-          agentName: "Agente de Investigação",
-          timestamp: new Date().toISOString(),
-          response: { html: reportHtml },
-          agent: 3,
-          isLatest: true,
-        }
-
-        // Atualizar o progresso de execução com o relatório
-        const currentProgress = JSON.parse(localStorage.getItem("rca_execution_progress") || "{}")
-        currentProgress.reportData = reportData
-        currentProgress.agentResponses = currentProgress.agentResponses || {}
-        currentProgress.agentResponses.agent3 = {
-          // Assuming agent 3 generates the final report
-          data: { html: reportHtml },
-          timestamp: new Date().toISOString(),
-        }
-        localStorage.setItem("rca_execution_progress", JSON.stringify(currentProgress))
 
         toast({
           title: "✅ Relatório gerado",
@@ -1228,12 +1241,12 @@ export default function ExecutionPage() {
           <CardDescription>Insira as informações da falha para análise</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex justify-start mb-4">
+          <div className="flex justify-end mb-4">
             <Button
               onClick={loadExample}
               variant="outline"
               disabled={isLoading}
-              className="bg-purple-50 hover:bg-purple-100 text-muted-foreground border-purple-200"
+              className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
             >
               <FileText className="mr-2 h-4 w-4" />
               Carregar Exemplo
@@ -1379,14 +1392,16 @@ export default function ExecutionPage() {
 
       {/* Botões de Controle */}
       <div className="flex flex-col gap-4 items-center">
-        <Button
-          onClick={startSequentialExecution} // Usando a função orquestradora
-          disabled={isLoading || !caseData.descricao.trim()}
-          className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg font-semibold rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
-        >
-          <Play className="mr-2 h-5 w-5" />
-          Executar Todos os Agentes
-        </Button>
+        <div className="flex justify-center mb-6">
+          <Button
+            onClick={startSequentialExecution} // Usando a função orquestradora
+            disabled={isLoading || !caseData.descricao.trim()}
+            className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg font-semibold rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
+          >
+            <Play className="mr-2 h-5 w-5" />
+            Executar Todos os Agentes
+          </Button>
+        </div>
 
         <Button
           onClick={generateReport}
