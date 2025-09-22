@@ -39,6 +39,12 @@ export default function ExecutionPage() {
   const router = useRouter()
 
   const [sessionId, setSessionId] = useState<string>("")
+const [agentSessionIds, setAgentSessionIds] = useState({
+  agent1: "",
+  agent2: "",
+  agent3: "",
+  agent4: "",
+})
 
   const [webhookURLs, setWebhookURLs] = useState({
     agent1: "https://n8n.grupobeely.com.br/webhook/d620f8b0-a685-4eb7-a9db-367431e11b8e",
@@ -241,12 +247,33 @@ export default function ExecutionPage() {
     loadPrompts()
   }, [])
 
-  const generateNewSessionId = () => {
-    const newSessionId = crypto.randomUUID()
-    setSessionId(newSessionId)
-    console.log("[v0] Generated new sessionId:", newSessionId)
-    return newSessionId
+const generateNewSessionId = (agentKey?: "agent1" | "agent2" | "agent3" | "agent4") => {
+  // modo por-agente (preferido para execução/chat)
+  if (agentKey) {
+    let sid =
+      agentSessionIds[agentKey] ||
+      localStorage.getItem(`rca_session_id_${agentKey}`) ||
+      ""
+
+    if (!sid) {
+      sid = crypto.randomUUID()
+      // atualiza estado e storage desse agente
+      setAgentSessionIds(prev => ({ ...prev, [agentKey]: sid }))
+      localStorage.setItem(`rca_session_id_${agentKey}`, sid)
+    }
+    return sid
   }
+
+  // modo legado/global (mantém compatibilidade, ex. relatório)
+  if (sessionId) return sessionId
+  const newSessionId = crypto.randomUUID()
+  setSessionId(newSessionId)
+  localStorage.setItem("rca_session_id", newSessionId)
+  console.log("[v0] Generated new (global) sessionId:", newSessionId)
+  return newSessionId
+}
+
+
 
   const saveProgress = () => {
     const progress = {
@@ -310,8 +337,16 @@ export default function ExecutionPage() {
   }
 
   const resetExecution = () => {
-    const newSessionId = crypto.randomUUID()
-    setSessionId(newSessionId)
+         setAgentSessionIds({ agent1: "", agent2: "", agent3: "", agent4: "" })
+  localStorage.removeItem("rca_session_id_agent1")
+  localStorage.removeItem("rca_session_id_agent2")
+  localStorage.removeItem("rca_session_id_agent3")
+  localStorage.removeItem("rca_session_id_agent4")
+const newSessionId = crypto.randomUUID()
+  setSessionId(newSessionId)
+    localStorage.setItem("rca_session_id", newSessionId)
+ 
+
     setAgentResponses({
       agent1: null,
       agent2: null,
@@ -407,7 +442,8 @@ export default function ExecutionPage() {
       setIsLoading(true)
       setAgentStatus((prev) => ({ ...prev, [`agent${agentNumber}`]: "loading" }))
 
-      const agentKey = `agent${agentNumber}` as keyof typeof webhookURLs
+const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agent4"
+      const currentSessionId = generateNewSessionId(agentKey)
       const webhookUrl = webhookURLs[agentKey]
 
       console.log(`[v0] Checking webhook for Agent ${agentNumber}:`, webhookUrl)
@@ -701,6 +737,7 @@ export default function ExecutionPage() {
       }
 
       const webhookURL = webhookURLs[`agent${agentNumber}`]
+const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agent4"
 
       const requestData = {
         prompts: { [`a${agentNumber}`]: currentPrompts[`a${agentNumber}`] },
@@ -708,7 +745,7 @@ export default function ExecutionPage() {
         agent: agentNumber,
         chatMessage: message,
         type: "chat_interaction",
-        id: sessionId, // Adicionando sessionId nas interações
+  id: generateNewSessionId(agentKey), // usa o mesmo ID desse agente
       }
 
       let previousResponse = null
