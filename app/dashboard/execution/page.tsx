@@ -1228,12 +1228,12 @@ export default function ExecutionPage() {
           <CardDescription>Insira as informações da falha para análise</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="flex justify-end mb-4">
+          <div className="flex justify-start mb-4">
             <Button
               onClick={loadExample}
               variant="outline"
               disabled={isLoading}
-              className="bg-purple-50 hover:bg-purple-100 text-purple-700 border-purple-200"
+              className="bg-purple-50 hover:bg-purple-100 text-muted-foreground border-purple-200"
             >
               <FileText className="mr-2 h-4 w-4" />
               Carregar Exemplo
