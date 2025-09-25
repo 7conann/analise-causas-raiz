@@ -1349,10 +1349,10 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5" />
-            Base de Conhecimento
+            Base de Conhecimento (Selecione somente 1 documento)
           </CardTitle>
           <CardDescription>
-            Selecione documentos da base de conhecimento para incluir como contexto na análise
+            Selecione documentos da base de conhecimento para incluir como contexto na análise 
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -1366,7 +1366,7 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <span className="text-sm font-medium">
-                  {selectedKnowledgeBase.length} de {availableDocuments.length} documentos selecionados
+                  {selectedKnowledgeBase.length} de 1 documentos selecionados
                 </span>
                 <div className="flex gap-2">
                   <Button
@@ -1416,14 +1416,14 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
 
       {/* Botões de Controle */}
       <div className="flex flex-col gap-4 items-center">
-        <Button
+        {/* <Button
           onClick={startSequentialExecution} // Usando a função orquestradora
           disabled={isLoading || !caseData.descricao.trim()}
           className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-3 text-lg font-semibold rounded-lg shadow-lg transition-all duration-200 hover:shadow-xl"
         >
           <Play className="mr-2 h-5 w-5" />
           Executar Todos os Agentes
-        </Button>
+        </Button> */}
 
         <Button
           onClick={generateReport}
@@ -1499,7 +1499,7 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
                 className="w-full"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Executar Novamente
+                Executar Manualmente
               </Button>
 
               {showViewResponseButton.agent1 && (
@@ -1552,7 +1552,7 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
                 className="w-full"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Executar Novamente
+                Executar Manualmente
               </Button>
 
               {showViewResponseButton.agent2 && (
@@ -1605,7 +1605,7 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
                 className="w-full"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Executar Novamente
+                Executar Manualmente
               </Button>
 
               {showViewResponseButton.agent3 && (
@@ -1658,7 +1658,7 @@ const agentKey = `agent${agentNumber}` as "agent1" | "agent2" | "agent3" | "agen
                 className="w-full"
               >
                 <RefreshCw className="mr-2 h-4 w-4" />
-                Executar Novamente
+                Executar Manualmente
               </Button>
 
               {showViewResponseButton.agent4 && (
